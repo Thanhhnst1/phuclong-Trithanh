@@ -25,6 +25,9 @@ function getKey(): Buffer {
   return key;
 }
 
+/** Initialise the key eagerly so startup can warn when no APP_SECRET is set. */
+export const initVault = () => void getKey();
+
 export function encrypt(plain: string): string {
   const iv = crypto.randomBytes(12);
   const c = crypto.createCipheriv('aes-256-gcm', getKey(), iv);

@@ -460,7 +460,7 @@ export async function buildApp(): Promise<FastifyInstance> {
 
   // ------------------------------------------------------------ static web app (production build)
   if (fs.existsSync(paths.webDist)) {
-    await app.register(fstatic, { root: paths.webDist, wildcard: false });
+    await app.register(fstatic, { root: paths.webDist });
     app.setNotFoundHandler((req, reply) => {
       if (req.url.startsWith('/api/') || req.url.startsWith('/media/')) return reply.code(404).send({ error: 'Không tìm thấy' });
       return reply.sendFile('index.html');

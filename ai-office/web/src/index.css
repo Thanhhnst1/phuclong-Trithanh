@@ -1,0 +1,95 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --bg: 246 244 252;
+  --panel: 255 255 255;
+  --card: 250 249 255;
+  --line: 228 225 240;
+  --ink: 43 45 66;
+  --mute: 118 116 140;
+  --brand: 124 106 246;
+  --sky1: #dff1ff;
+  --sky2: #fdeaf3;
+  --grass: #bfe8b8;
+  --grass2: #a6dc9e;
+  --dirt: #e9c9a5;
+  --dirt2: #d6ad84;
+  --path: #f6eedf;
+  --wall: #fffaf3;
+  --wall2: #f1e6d8;
+  --window: #bfe3ff;
+  color-scheme: light;
+}
+.dark {
+  --bg: 20 20 32;
+  --panel: 29 29 45;
+  --card: 36 36 55;
+  --line: 52 52 76;
+  --ink: 232 232 245;
+  --mute: 160 160 185;
+  --brand: 150 134 255;
+  --sky1: #1b1d3a;
+  --sky2: #2b2148;
+  --grass: #4f8a64;
+  --grass2: #3f7353;
+  --dirt: #7c5a48;
+  --dirt2: #5e4234;
+  --path: #8b8399;
+  --wall: #d9d3e6;
+  --wall2: #b9b0cc;
+  --window: #ffd77a;
+  color-scheme: dark;
+}
+
+html, body, #root { height: 100%; }
+body { @apply bg-bg text-ink font-sans antialiased; }
+
+@layer components {
+.btn { @apply inline-flex items-center justify-center gap-1.5 rounded-xl px-3 py-2 text-sm font-semibold transition active:scale-[.98] disabled:opacity-50 disabled:pointer-events-none; }
+.btn-primary { @apply btn bg-brand text-white hover:brightness-110 shadow-soft; }
+.btn-ghost { @apply btn bg-card hover:bg-line/60 text-ink border border-line; }
+.btn-danger { @apply btn bg-rose-500 text-white hover:bg-rose-600; }
+.input { @apply w-full rounded-xl border border-line bg-card px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-brand/40; }
+.label { @apply text-xs font-semibold text-mute uppercase tracking-wide; }
+.card { @apply rounded-2xl border border-line bg-panel p-4; }
+.chip { @apply inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold; }
+}
+
+/* ---------- office animations ---------- */
+@keyframes float { 0%,100% { transform: translateY(0) } 50% { transform: translateY(-8px) } }
+@keyframes bob { 0%,100% { transform: translateY(0) } 50% { transform: translateY(-3px) } }
+@keyframes breathe { 0%,100% { transform: scaleY(1) } 50% { transform: scaleY(1.03) } }
+@keyframes sway { 0%,100% { transform: rotate(-12deg) } 50% { transform: rotate(14deg) } }
+@keyframes type { 0%,100% { transform: translateY(0) } 50% { transform: translateY(2px) } }
+@keyframes shake { 0%,100% { transform: translateX(0) } 25% { transform: translateX(-2px) } 75% { transform: translateX(2px) } }
+@keyframes drift { from { transform: translateX(-200px) } to { transform: translateX(1900px) } }
+@keyframes blink { 0%,92%,100% { transform: scaleY(1) } 95% { transform: scaleY(0.1) } }
+@keyframes pop { 0% { transform: scale(.6); opacity: 0 } 70% { transform: scale(1.08) } 100% { transform: scale(1); opacity: 1 } }
+@keyframes pulse-ring { 0% { r: 6; opacity: .9 } 100% { r: 16; opacity: 0 } }
+@keyframes dash { to { stroke-dashoffset: -40 } }
+@keyframes grow { 0%,100% { transform: scaleY(.4) } 50% { transform: scaleY(1) } }
+@keyframes fly { 0% { transform: translate(0,0) rotate(0) } 50% { transform: translate(6px,-6px) rotate(8deg) } 100% { transform: translate(0,0) rotate(0) } }
+
+.island { animation: float 7s ease-in-out infinite; }
+.cloud { animation: drift linear infinite; }
+.fbox { transform-box: fill-box; transform-origin: center; }
+.fbottom { transform-box: fill-box; transform-origin: 50% 100%; }
+.av-idle .av-body { animation: breathe 3.2s ease-in-out infinite; }
+.av-working .av-all { animation: bob .7s ease-in-out infinite; }
+.av-working .av-hand { animation: type .25s ease-in-out infinite; }
+.av-working .av-prop-sway { animation: sway 1.2s ease-in-out infinite; }
+.av-working .av-prop-fly { animation: fly 1s ease-in-out infinite; }
+.av-working .av-bar { animation: grow 1s ease-in-out infinite; }
+.av-error .av-all { animation: shake .35s ease-in-out infinite; }
+.av-eye { animation: blink 4s infinite; }
+.bubble { animation: pop .35s ease-out; }
+.flow-active { animation: dash 1s linear infinite; }
+.ring-pulse { animation: pulse-ring 1.4s ease-out infinite; }
+@media (prefers-reduced-motion: reduce) {
+  .island, .cloud, .av-all, .av-body, .av-hand, .av-prop-sway, .av-prop-fly, .av-bar, .flow-active, .ring-pulse { animation: none !important; }
+}
+
+/* thin scrollbars */
+* { scrollbar-width: thin; scrollbar-color: rgb(var(--line)) transparent; }

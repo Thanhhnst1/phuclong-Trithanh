@@ -2,10 +2,11 @@ import { config } from './config.js';
 import { bootstrap } from './bootstrap.js';
 import { buildApp } from './app.js';
 import { engine } from './orchestrator/engine.js';
-import { vaultKeySource } from './core/vault.js';
+import { initVault, vaultKeySource } from './core/vault.js';
 import { users } from './db/index.js';
 
 await bootstrap();
+initVault();
 const app = await buildApp();
 engine.start();
 await app.listen({ port: config.port, host: config.host });
