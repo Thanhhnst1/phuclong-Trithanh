@@ -88,7 +88,7 @@ export function AgentDrawer() {
   );
 }
 
-const AGENT_IDS = ['orchestrator', 'researcher', 'collector', 'editor', 'writer', 'zalo', 'facebook', 'tiktok', 'threads', 'reporter'];
+const AGENT_IDS = ['orchestrator', 'researcher', 'factchecker', 'editor', 'writer', 'zalo', 'facebook', 'tiktok', 'threads', 'reporter'];
 
 export function WorkflowsPanel() {
   const { notify, user, agents } = useStore();
@@ -147,6 +147,7 @@ export function WorkflowsPanel() {
 
   return (
     <div className="space-y-2">
+      <AutoHuntCard workflows={list} />
       <p className="text-xs text-mute">Workflow là chuỗi bước Orchestrator dùng để giao việc. Nhân bản để tùy chỉnh (bật/tắt bước, số lần thử, agent dự phòng) và tái sử dụng khi tạo chiến dịch.</p>
       {list.map((w) => (
         <div key={w.id} className="rounded-xl border border-line bg-card p-3">
@@ -200,6 +201,38 @@ export function UsersPanel() {
           {u.id !== user.id && <button className="btn-ghost !p-1.5 text-rose-600" onClick={async () => { if (confirm('Xóa người dùng?')) { await api.del(`/api/users/${u.id}`); await load(); } }} aria-label="Xóa"><Trash2 size={13} /></button>}
         </div>
       ))}
+    </div>
+  );
+}
+
+interface AutoHunt { enabled: boolean; time: string; goal: string; platforms: string[]; workflowId: string; options: { count: number; categories: string[]; region: string }; lastRun: string | null }
+
+function AutoHuntCard({ workflows }: { workflows: Workflow[] }) {
+  const { notify, user } = useStore();
+  const [a, setA] = useState<AutoHunt | null>(null);
+  useEffect(() => { api.get<AutoHunt>('/api/autohunt').then(setA).catch(() => {}); }, []);
+  if (!a) return null;
+  const save = async () => {
+    try { setA(await api.put<AutoHunt>('/api/autohunt', a)); notify('ok', a.enabled ? `Sẽ tự săn tin lúc ${a.time} mỗi ngày` : 'Đã tắt săn tin tự động'); } catch (e: any) { notify('err', e.message); }
+  };
+  return (
+    <div className="card space-y-2 !p-3">
+      <div className="flex items-center justify-between">
+        <h3 className="font-bold">⏰ Săn tin tự động hằng ngày</h3>
+        <label className="flex items-center gap-1.5 text-xs font-semibold"><input type="checkbox" checked={a.enabled} disabled={user?.role === 'viewer'} onChange={(e) => setA({ ...a, enabled: e.target.checked })} /> Bật</label>
+      </div>
+      <textarea className="input min-h-[60px]" value={a.goal} onChange={(e) => setA({ ...a, goal: e.target.value })} />
+      <div className="grid grid-cols-3 gap-2">
+        <input type="time" className="input !py-1.5" value={a.time} onChange={(e) => setA({ ...a, time: e.target.value })} aria-label="Giờ chạy" />
+        <select className="input !py-1.5" value={a.options.count} onChange={(e) => setA({ ...a, options: { ...a.options, count: Number(e.target.value) } })} aria-label="Số chủ đề">
+          {[5, 6, 7, 8, 9, 10].map((n) => <option key={n} value={n}>{n} chủ đề</option>)}
+        </select>
+        <select className="input !py-1.5" value={a.workflowId} onChange={(e) => setA({ ...a, workflowId: e.target.value })} aria-label="Workflow">
+          {workflows.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}
+        </select>
+      </div>
+      <p className="text-xs text-mute">Mỗi ngày tạo 1 phiên săn tin, chủ đề không lặp lại chủ đề cũ. Bài vẫn chờ anh chọn & duyệt trước khi đăng.{a.lastRun ? ` Lần chạy gần nhất: ${a.lastRun}.` : ''}</p>
+      {user?.role !== 'viewer' && <button className="btn-primary" onClick={save}>Lưu lịch</button>}
     </div>
   );
 }

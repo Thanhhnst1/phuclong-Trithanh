@@ -15,7 +15,7 @@ export async function bootstrap(dbFile = paths.db) {
 }
 
 export async function seedLibrary(dir = config.seedDir) {
-  if (settings.get('library.seeded') === '1') return 0;
+  if (!dir || settings.get('library.seeded') === '1') return 0;
   let n = 0;
   if (fs.existsSync(dir)) {
     for (const f of fs.readdirSync(dir)) {

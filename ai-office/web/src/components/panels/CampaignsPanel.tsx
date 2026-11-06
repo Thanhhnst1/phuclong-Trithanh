@@ -5,8 +5,9 @@ import { useStore } from '../../lib/store';
 import { Empty, KindBadge, Progress, Section, StatusBadge } from '../ui';
 
 const EXAMPLES = [
-  'Quảng bá bộ quà Tết này lên Zalo, Facebook, TikTok và Threads.',
-  'Giới thiệu răng gầu K100 chính hãng tới khách hàng trên Facebook và Zalo.',
+  'Săn 8 câu chuyện kỳ lạ, bí ẩn có thật trong tuần này cho trang Facebook.',
+  'Tìm các khám phá khoa học và khảo cổ gây kinh ngạc mới công bố trên thế giới.',
+  'Những câu chuyện con người cảm động, kỳ tích có thật ở Việt Nam gần đây.',
 ];
 
 export function CampaignComposer() {
@@ -15,24 +16,37 @@ export function CampaignComposer() {
   const [platforms, setPlatforms] = useState<Platform[]>([]);
   const [auto, setAuto] = useState(true);
   const [workflows, setWorkflows] = useState<Workflow[]>([]);
-  const [wf, setWf] = useState('wf_full');
+  const [wf, setWf] = useState('wf_newsroom');
   const [scheduledAt, setScheduledAt] = useState('');
   const [publishAt, setPublishAt] = useState('');
+  const [count, setCount] = useState(8);
+  const [cats, setCats] = useState<string[]>([]);
+  const [allCats, setAllCats] = useState<string[]>([]);
+  const [region, setRegion] = useState<'vn' | 'world' | 'both'>('both');
+  const [autoCats, setAutoCats] = useState(true);
   const [busy, setBusy] = useState(false);
   const canEdit = user?.role !== 'viewer';
 
-  useEffect(() => { api.get<Workflow[]>('/api/workflows').then(setWorkflows).catch(() => {}); }, []);
   useEffect(() => {
-    if (!auto || goal.length < 4) return;
-    const t = setTimeout(() => api.post<{ platforms: Platform[] }>('/api/campaigns/preview', { goal }).then((r) => setPlatforms(r.platforms)).catch(() => {}), 300);
+    api.get<Workflow[]>('/api/workflows').then(setWorkflows).catch(() => {});
+    api.get<string[]>('/api/categories').then(setAllCats).catch(() => {});
+  }, []);
+  useEffect(() => {
+    if (goal.length < 4) return;
+    const t = setTimeout(() => api.post<{ platforms: Platform[]; categories: string[] }>('/api/campaigns/preview', { goal }).then((r) => {
+      if (auto) setPlatforms(r.platforms.length ? r.platforms : ['facebook']);
+      if (autoCats) setCats(r.categories);
+    }).catch(() => {}), 300);
     return () => clearTimeout(t);
-  }, [goal, auto]);
+  }, [goal, auto, autoCats]);
+  const publishHour = publishAt ? new Date(publishAt).getHours() * 60 + new Date(publishAt).getMinutes() : null;
+  const near20 = publishHour !== null && Math.abs(publishHour - 20 * 60) <= 30;
 
   const submit = async () => {
     setBusy(true);
     try {
       const c = await api.post<{ id: string }>('/api/campaigns', {
-        goal, workflowId: wf, platforms,
+        goal, workflowId: wf, platforms, options: { count, categories: cats, region },
         scheduledAt: scheduledAt ? new Date(scheduledAt).toISOString() : null,
         publishAt: publishAt ? new Date(publishAt).toISOString() : null,
       });
@@ -50,7 +64,7 @@ export function CampaignComposer() {
   return (
     <div className="card space-y-3">
       <div className="flex items-center justify-between">
-        <h3 className="font-bold">Giao nhiệm vụ mới</h3>
+        <h3 className="font-bold">Giao nhiệm vụ cho tòa soạn</h3>
         {system && (
           <span className={`chip ${system.mode === 'demo' ? 'bg-fuchsia-100 text-fuchsia-700 dark:bg-fuchsia-500/20 dark:text-fuchsia-300' : 'bg-emerald-100 text-emerald-700'}`}>
             {system.mode === 'demo' ? 'DEMO — không đăng thật' : 'PRODUCTION'}
@@ -59,7 +73,7 @@ export function CampaignComposer() {
       </div>
       <textarea
         className="input min-h-[84px] resize-y"
-        placeholder="Ví dụ: Quảng bá bộ quà Tết này lên Zalo, Facebook, TikTok và Threads."
+        placeholder="Ví dụ: Săn 8 câu chuyện kỳ lạ, bí ẩn có thật trong tuần này cho trang Facebook."
         value={goal}
         onChange={(e) => { setGoal(e.target.value); setAuto(true); }}
         disabled={!canEdit}
@@ -80,7 +94,26 @@ export function CampaignComposer() {
             );
           })}
         </div>
-        {!platforms.length && goal.length > 4 && <p className="mt-1 text-xs text-mute">Không nhắc nền tảng nào → sẽ dùng cả 4.</p>}
+        {!platforms.length && goal.length > 4 && <p className="mt-1 text-xs text-mute">Không chọn nền tảng → mặc định Facebook.</p>}
+      </div>
+      <div>
+        <div className="label mb-1">Nhóm chủ đề {!cats.length && <span className="normal-case font-normal">(để trống = tất cả)</span>}</div>
+        <div className="flex flex-wrap gap-1.5">
+          {allCats.map((c) => {
+            const on = cats.includes(c);
+            return <button key={c} type="button" onClick={() => { setAutoCats(false); setCats(on ? cats.filter((x) => x !== c) : [...cats, c]); }} className={`chip !px-2.5 !py-1 border ${on ? 'bg-brand text-white border-transparent' : 'border-line text-mute'}`}>{c}</button>;
+          })}
+        </div>
+      </div>
+      <div className="grid grid-cols-2 gap-2">
+        <label className="grid gap-1"><span className="label">Số chủ đề: {count}</span>
+          <input type="range" min={5} max={10} value={count} onChange={(e) => setCount(Number(e.target.value))} className="accent-[rgb(var(--brand))]" />
+        </label>
+        <label className="grid gap-1"><span className="label">Phạm vi</span>
+          <select className="input !py-1.5" value={region} onChange={(e) => setRegion(e.target.value as any)}>
+            <option value="both">Trong nước + thế giới</option><option value="vn">Trong nước</option><option value="world">Thế giới</option>
+          </select>
+        </label>
       </div>
       <details className="text-sm">
         <summary className="cursor-pointer text-mute">Tùy chọn: workflow & lịch</summary>
@@ -95,12 +128,12 @@ export function CampaignComposer() {
           </label>
           <label className="grid gap-1"><span className="label">Hẹn giờ đăng (sau khi duyệt)</span>
             <input type="datetime-local" className="input" value={publishAt} onChange={(e) => setPublishAt(e.target.value)} />
-            <span className="text-xs text-mute">Mẹo: tránh khung 20:00 nếu đó là giờ đăng video chính của page.</span>
+            {near20 ? <span className="text-xs font-semibold text-amber-600">⚠ Gần khung 20:00 dành cho video chính — nên chọn giờ khác.</span> : <span className="text-xs text-mute">Tránh khung 20:00 (giờ video chính).</span>}
           </label>
         </div>
       </details>
       <button className="btn-primary w-full" disabled={!canEdit || busy || goal.trim().length < 5} onClick={submit}>
-        <Rocket size={16} /> {busy ? 'Đang gửi…' : 'Giao việc cho đội AI'}
+        <Rocket size={16} /> {busy ? 'Đang gửi…' : 'Giao việc cho tòa soạn'}
       </button>
       {!canEdit && <p className="text-xs text-mute">Tài khoản xem (viewer) không tạo được chiến dịch.</p>}
     </div>
@@ -124,11 +157,11 @@ export function CampaignList() {
   }, [campaigns, status, agent, q]);
 
   return (
-    <Section title={`Chiến dịch (${filtered.length})`}>
+    <Section title={`Phiên săn tin (${filtered.length})`}>
       <div className="grid grid-cols-2 gap-2">
         <div className="relative col-span-2">
           <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-mute" />
-          <input className="input !pl-8" placeholder="Tìm chiến dịch…" value={q} onChange={(e) => setQ(e.target.value)} />
+          <input className="input !pl-8" placeholder="Tìm phiên…" value={q} onChange={(e) => setQ(e.target.value)} />
         </div>
         <select className="input" value={status} onChange={(e) => setStatus(e.target.value)} aria-label="Lọc trạng thái">
           <option value="">Mọi trạng thái</option>
@@ -139,7 +172,7 @@ export function CampaignList() {
           {agents.map((a) => <option key={a.id} value={a.id}>{a.emoji} {a.name}</option>)}
         </select>
       </div>
-      {!filtered.length && <Empty>Chưa có chiến dịch nào.</Empty>}
+      {!filtered.length && <Empty>Chưa có phiên săn tin nào.</Empty>}
       <ul className="space-y-1.5">
         {filtered.map((c) => (
           <li key={c.id}>
@@ -193,14 +226,16 @@ export function CampaignDetailView() {
         </div>
         <StatusBadge status={c.status} />
       </div>
-      {c.mode === 'demo' && <p className="rounded-lg bg-fuchsia-50 dark:bg-fuchsia-500/10 px-3 py-2 text-xs text-fuchsia-700 dark:text-fuchsia-300">Chiến dịch DEMO: bước đăng bài chỉ mô phỏng, không gọi API mạng xã hội.</p>}
+      {c.mode === 'demo' && <p className="rounded-lg bg-fuchsia-50 dark:bg-fuchsia-500/10 px-3 py-2 text-xs text-fuchsia-700 dark:text-fuchsia-300">Phiên DEMO: chưa có Claude thì chủ đề và bài chỉ là MẪU; bước đăng chỉ mô phỏng.</p>}
       {canEdit && (
         <div className="flex flex-wrap gap-1.5">
           {['draft', 'scheduled'].includes(c.status) && <button className="btn-primary" onClick={() => act('start')}><Play size={14} /> Bắt đầu ngay</button>}
           {['running', 'awaiting_approval', 'scheduled'].includes(c.status) && <button className="btn-ghost" onClick={() => act('pause')}><Pause size={14} /> Tạm dừng</button>}
           {c.status === 'paused' && <button className="btn-primary" onClick={() => act('resume')}><Play size={14} /> Tiếp tục</button>}
           {!finished && <button className="btn-ghost text-rose-600" onClick={() => confirm('Hủy chiến dịch này?') && act('cancel')}><Square size={14} /> Hủy</button>}
-          {c.status === 'awaiting_approval' && <button className="btn-primary" onClick={() => setTab('approval')}>Duyệt nội dung →</button>}
+          {c.status === 'awaiting_approval' && (tasks.some((t) => t.stepKey === 'select' && t.status === 'awaiting_approval')
+            ? <button className="btn-primary" onClick={() => setTab('topics')}>Chọn chủ đề →</button>
+            : <button className="btn-primary" onClick={() => setTab('approval')}>Duyệt bài →</button>)}
           {finished && user?.role === 'admin' && <button className="btn-ghost text-rose-600" onClick={remove}><Trash2 size={14} /> Xóa</button>}
         </div>
       )}
@@ -208,10 +243,10 @@ export function CampaignDetailView() {
         <details className="rounded-xl bg-card border border-line p-2.5 text-sm">
           <summary className="cursor-pointer font-semibold">Kế hoạch {c.plan.generatedBy && <KindBadge kind={c.plan.generatedBy} />}</summary>
           <div className="mt-2 space-y-1 text-xs">
-            <p><b>Sản phẩm:</b> {c.plan.product}</p>
-            <p><b>Đối tượng:</b> {c.plan.audience}</p>
-            <p><b>Giọng điệu:</b> {c.plan.tone}</p>
-            <p><b>Thông điệp:</b> {c.plan.keyMessages?.join(' · ')}</p>
+            <p><b>Hướng săn tin:</b> {c.plan.focus}</p>
+            <p><b>Nhóm chủ đề:</b> {c.plan.categories?.join(' · ')}</p>
+            <p><b>Số chủ đề:</b> {c.plan.count} · <b>Phạm vi:</b> {c.plan.region === 'vn' ? 'Trong nước' : c.plan.region === 'world' ? 'Thế giới' : 'Trong nước + thế giới'}</p>
+            {c.plan.searchQueries?.length > 0 && <p><b>Truy vấn:</b> {c.plan.searchQueries.join(' | ')}</p>}
             {c.plan.revisionNotes?.length > 0 && <p><b>Góp ý đã gửi:</b> {c.plan.revisionNotes.join(' | ')}</p>}
           </div>
         </details>

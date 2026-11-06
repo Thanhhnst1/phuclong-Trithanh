@@ -1,7 +1,7 @@
 import path from 'node:path';
 import ExcelJS from 'exceljs';
 import PDFDocument from 'pdfkit';
-import { campaigns, publications, tasks, contents } from '../db/index.js';
+import { campaigns, publications, tasks, contents, stories } from '../db/index.js';
 import { paths } from '../config.js';
 import type { Campaign, Publication, Task } from '../core/types.js';
 import { profileOf } from '../agents/types.js';
@@ -13,7 +13,11 @@ export interface CampaignReport {
   publications: (Pick<Publication, 'platform' | 'mode' | 'status' | 'url' | 'error' | 'metrics'> & { title: string | null })[];
   totals: { published: number; simulated: number; manualPending: number; manualDone: number; failed: number };
   engagement: Record<string, number>;
+  stories: { title: string; verification: string; status: string; appealScore: number; when: string; where: string; angle: string; sources: string[]; note: string }[];
 }
+
+const VERIF: Record<string, string> = { confirmed: 'Đã xác nhận', partial: 'Xác nhận một phần', insufficient: 'Chưa đủ bằng chứng', demo: 'MẪU DEMO' };
+const STORY_ST: Record<string, string> = { proposed: 'Đề xuất', held: 'Chờ kiểm chứng', rejected: 'Loại', selected: 'Đã chọn', published: 'Đã đăng', candidate: 'Ứng viên' };
 
 const STATUS_VI: Record<string, string> = {
   published: 'Đã đăng (thật)', draft_uploaded: 'Đã gửi nháp', simulated: 'MÔ PHỎNG', manual_pending: 'Chờ đăng tay', manual_done: 'Đã đăng tay', failed: 'Lỗi',
@@ -47,6 +51,10 @@ export function buildReport(campaignId: string): CampaignReport {
       manualDone: count('manual_done'), failed: count('failed'),
     },
     engagement,
+    stories: stories.forCampaign(campaignId).map((x) => ({
+      title: x.title, verification: VERIF[x.verification] ?? x.verification, status: STORY_ST[x.status] ?? x.status, appealScore: x.appealScore,
+      when: x.when, where: x.where, angle: x.angle, sources: x.sources.map((y) => y.url), note: x.checkNote,
+    })),
   };
 }
 
@@ -63,6 +71,15 @@ export async function reportToXlsx(r: CampaignReport): Promise<Buffer> {
   ];
   rows.forEach((row) => s.addRow(row));
   s.getColumn(1).font = { bold: true };
+
+  const st = wb.addWorksheet('Chủ đề');
+  st.columns = [
+    { header: 'Chủ đề', key: 'title', width: 50 }, { header: 'Xác minh', key: 'verification', width: 20 }, { header: 'Trạng thái', key: 'status', width: 16 },
+    { header: 'Điểm hấp dẫn', key: 'appealScore', width: 12 }, { header: 'Thời gian', key: 'when', width: 18 }, { header: 'Địa điểm', key: 'where', width: 18 },
+    { header: 'Góc khai thác', key: 'angle', width: 14 }, { header: 'Nguồn', key: 'sources', width: 60 }, { header: 'Ghi chú kiểm chứng', key: 'note', width: 50 },
+  ];
+  for (const x of r.stories) st.addRow({ ...x, sources: x.sources.join('\n') });
+  st.getRow(1).font = { bold: true };
 
   const p = wb.addWorksheet('Bài đăng');
   p.columns = [
@@ -103,6 +120,16 @@ export function reportToPdf(r: CampaignReport): Promise<Buffer> {
     doc.text(`Nền tảng: ${r.campaign.platforms.join(', ')}   ·   Trạng thái: ${r.campaign.status}`);
     doc.text(`Xuất lúc: ${new Date(r.generatedAt).toLocaleString('vi-VN')}`).moveDown();
 
+    if (r.stories.length) {
+      doc.font('B').fontSize(13).text('Chủ đề đã săn & kiểm chứng').moveDown(0.3);
+      for (const x of r.stories) {
+        doc.font('B').fontSize(10).text(`• [${x.appealScore}/10] ${x.title}`);
+        doc.font('R').text(`  ${x.verification} · ${x.status} · ${x.when} · ${x.where}`);
+        for (const u of x.sources.slice(0, 3)) doc.fillColor('#1a5fb4').text(`  ${u}`, { link: u }).fillColor('#222');
+        if (x.note) doc.fillColor('#555').text(`  ${x.note}`).fillColor('#222');
+      }
+      doc.moveDown();
+    }
     doc.font('B').fontSize(13).text('Kết quả xuất bản').moveDown(0.3);
     doc.font('R').fontSize(10).text(
       `Đăng thật: ${r.totals.published}   Mô phỏng: ${r.totals.simulated}   Chờ đăng tay: ${r.totals.manualPending}   Đã đăng tay: ${r.totals.manualDone}   Lỗi: ${r.totals.failed}`,

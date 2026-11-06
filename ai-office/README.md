@@ -1,36 +1,60 @@
-# 🏝️ AI Office — Hệ thống Multi-AI Agent với văn phòng ảo isometric
+# 🗞️ Tòa soạn AI — săn tin nóng, chuyện kỳ lạ có thật cho Facebook
 
-Một **Orchestrator** cùng **9 AI Agent** tự lập kế hoạch, nghiên cứu, thu thập tư liệu, chỉnh ảnh/dựng video, viết bài, chờ anh **duyệt**, rồi đăng lên **Zalo OA · Facebook Page · TikTok · Threads** và xuất **báo cáo PDF/Excel**. Toàn bộ tiến trình hiện trực tiếp trên một văn phòng mini dạng isometric.
+Một **Tổng biên tập (Orchestrator)** điều phối **9 AI Agent** làm việc như một tòa soạn:
+**săn chủ đề HOT → kiểm chứng bắt buộc → anh chọn chủ đề → thiết kế ảnh ∥ viết bài → anh duyệt → đăng** lên trang Facebook chính (tùy chọn thêm Threads, Zalo OA, TikTok) → **báo cáo PDF/Excel**. Mọi thứ hiện trực tiếp trên văn phòng ảo isometric.
+
+> Nguyên tắc: **uy tín đứng trên lượt xem**. Không bịa sự kiện/nguồn, không giật tít sai sự thật, không biến tin đồn thành sự thật, tách rõ *đã xác nhận / lời kể / giả thuyết*.
 
 ![Văn phòng ảo](docs/screenshot-desktop.jpg)
 
 ---
 
-## 1. Chạy thử trong 2 phút (Demo Mode)
+## 1. Chạy trên máy (Windows / Mac)
 
-Yêu cầu: **Node.js ≥ 22.13**, `ffmpeg` (để dựng video, tùy chọn).
+Yêu cầu: **Node.js ≥ 22.13**, Git; `ffmpeg` nếu muốn dựng video TikTok.
 
 ```bash
-cd ai-office
+git clone -b claude/multi-ai-agent-system-qe8lqw https://github.com/Thanhhnst1/phuclong-Trithanh.git
+cd phuclong-Trithanh/ai-office
 npm install
-npm run build        # build giao diện
-npm start            # http://127.0.0.1:8787
+npm run build
+npm start            # mở http://127.0.0.1:8787
 ```
+Windows báo `running scripts is disabled` → chạy 1 lần: `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned`.
 
-Mở trình duyệt → tạo tài khoản quản trị → gõ nhiệm vụ, ví dụ:
+Lần đầu: tạo tài khoản quản trị → tab **Săn tin** → gõ yêu cầu, ví dụ
+> Săn 8 câu chuyện kỳ lạ, bí ẩn có thật trong tuần này cho trang Facebook.
 
-> Quảng bá bộ quà Tết này lên Zalo, Facebook, TikTok và Threads.
+### Demo Mode vs có Claude
+| | Chưa có API key (Demo) | Có Claude API key |
+|---|---|---|
+| Săn tin | Chủ đề **[MẪU DEMO]** rõ ràng là giả để thử quy trình | Claude **web search** thật: báo chí, khoa học, MXH, trong nước & thế giới |
+| Kiểm chứng | Không kiểm chứng (ghi rõ) | Truy nguồn gốc, ≥2 nguồn độc lập, phát hiện tin cũ đăng lại, rủi ro ảnh/pháp lý |
+| Viết bài | Bài mẫu gắn nhãn | Bài Facebook hook mạnh, có cao trào, câu hỏi mở, **luôn ghi nguồn** |
+| Ảnh | Thẻ chữ thật (gắn nhãn "Ảnh minh họa") | như bên trái, hoặc ảnh thật có nguồn do anh tải lên |
+| Đăng | Chỉ mô phỏng | Production: đăng thật (đã kết nối) hoặc gói đăng tay |
 
-Không cần API key nào. Ở **Demo Mode**:
-- Lập kế hoạch, nghiên cứu, viết bài dùng **mẫu có gắn nhãn "Mô phỏng"** (không bịa nguồn).
-- Thu thập, chỉnh ảnh (poster 1:1, 4:5, 9:16, 1.91:1) và dựng video 9:16 là **xử lý thật** trên ảnh sản phẩm trong thư viện (ảnh `.png` ở gốc repo được nạp sẵn lần đầu).
-- Bước đăng bài **chỉ mô phỏng**, ghi trạng thái `MÔ PHỎNG`, không có link, không có số liệu.
+Nhập key: tab **Kết nối → Claude** (mã hóa trong DB). Model mặc định `claude-opus-5-5`.
 
-Chế độ phát triển (hot reload cả 2 phía): `npm run dev` → giao diện ở http://localhost:5173.
-
-Chạy test: `npm test` (15 test: planner, DAG workflow, toàn bộ quy trình demo, phân quyền, ẩn secret, retry/backoff, lỗi fatal + chạy lại, hủy, production thiếu kết nối → đăng thủ công).
+Chạy test: `npm test` (17 test, gồm: chặn URL nguồn do AI tự bịa, tự hạ "đã xác nhận" khi chỉ 1 nguồn, chống lặp chủ đề giữa các phiên, 2 cổng duyệt, retry/hủy, production thiếu kết nối → đăng tay, săn tin tự động hằng ngày).
 
 ---
+
+## 1b. Quy trình tòa soạn (`wf_newsroom`)
+
+| # | Bước | Agent | Kết quả |
+|---|------|-------|---------|
+| 1 | Lập kế hoạch | 🧠 Tổng biên tập | hướng săn tin, nhóm chủ đề, truy vấn, điều cấm |
+| 2 | Săn chủ đề HOT | 🛰️ Phóng viên | ~N+4 ứng viên; **bỏ chủ đề trùng** với kho chủ đề cũ; chỉ giữ URL có thật trong kết quả tìm kiếm |
+| 3 | Kiểm chứng | 🕵️ Kiểm chứng viên | mỗi chủ đề: *Đã xác nhận / Xác nhận một phần / Chưa đủ bằng chứng*, sự thật vs giả thuyết, rủi ro → **Đề xuất / Chờ kiểm chứng / Loại** |
+| 4 | **Anh chọn chủ đề** | 🧠 | tab **Chủ đề**: 5–10 đề xuất với tiêu đề, tóm tắt, thời gian–địa điểm, trạng thái xác minh, nguồn, lý do thu hút, góc khai thác, điểm hấp dẫn 1–10 |
+| 5 | Thiết kế ảnh ∥ Viết bài | 🎨 ∥ ✍️ | thẻ ảnh 4:5 cho Facebook (ảnh thật có nguồn nếu anh tải lên), 2 phương án bài/nền tảng |
+| 6 | **Anh duyệt bài** | 🧠 | chọn phương án + ảnh, sửa chữ, hoặc gửi góp ý viết lại |
+| 7 | Đăng | 📘 (🧵 💬 🎵) | giãn cách 5 giây giữa các bài; ghi link & trạng thái |
+| 8–9 | Số liệu → Báo cáo | 📊 | reactions/comments/shares (bài thật) → PDF + Excel kèm danh sách chủ đề & nguồn |
+
+Workflow phụ `wf_proposals`: chỉ săn + kiểm chứng + báo cáo danh sách chủ đề (anh tự triển khai).
+**Săn tin tự động hằng ngày**: tab Workflow → bật lịch (giờ, yêu cầu, số chủ đề). Bài vẫn chờ anh chọn & duyệt.
 
 ## 2. Kiến trúc
 
@@ -61,9 +85,9 @@ Chạy test: `npm test` (15 test: planner, DAG workflow, toàn bộ quy trình d
 ```
 ai-office/
 ├── server/src
+│   ├── agents/                # researcher (săn tin), factchecker, editor (ảnh), writer, publishers, reporter
 │   ├── app.ts                 # toàn bộ REST API + SSE + phục vụ web build
 │   ├── orchestrator/          # engine.ts (queue/worker), planner.ts, workflows.ts
-│   ├── agents/                # 9 agent + orchestrator, mỗi agent 1 file
 │   ├── integrations/          # adapter từng nền tảng, OAuth, MCP, token refresh
 │   ├── llm/                   # interface LLM + Claude
 │   ├── media/                 # lưu trữ, poster, video, URL công khai ký số
@@ -76,19 +100,6 @@ ai-office/
 │   └── lib/                   # api client, store (zustand + SSE)
 └── docs/
 ```
-
-### Quy trình mặc định (`wf_full`)
-
-| # | Bước | Agent | Input → Output | Lỗi |
-|---|------|-------|----------------|-----|
-| 1 | Lập kế hoạch | Orchestrator | mục tiêu tiếng Việt → sản phẩm, đối tượng, thông điệp, từ khóa | retry 2 lần |
-| 2 | Nghiên cứu ∥ 3. Thu thập | Researcher ∥ Collector | kế hoạch → insight/ý tưởng/nguồn ∥ ảnh được phép, loại trùng, ghi giấy phép | retry 3, backoff |
-| 4 | Chỉnh sửa ∥ 5. Viết bài | Editor ∥ Writer | ảnh → poster theo tỉ lệ + video ∥ nghiên cứu → 3 phương án/nền tảng | timeout 5 phút |
-| 6 | **Người dùng duyệt** | Orchestrator | chọn phương án + ảnh, sửa chữ, hoặc gửi góp ý viết lại | chờ vô hạn |
-| 7 | Đăng Zalo ∥ FB ∥ TikTok ∥ Threads | 4 Publisher | nội dung đã duyệt → bài đăng thật / nháp / thủ công / mô phỏng | lỗi 1 nền tảng không chặn nền tảng khác |
-| 8 | Thu số liệu → 9. Báo cáo | Reporter | bài đăng thật → reactions/views… → PDF + Excel | chạy cả khi bước trước lỗi |
-
-Mỗi bước có trạng thái, tiến độ %, số lần chạy, lỗi, output JSON, nhật ký, nút **Chạy lại**. Workflow có thể nhân bản, bật/tắt bước, đổi số lần thử, đặt **agent dự phòng**, và lưu để tái sử dụng (tab Workflow). Ngoài ra có sẵn `wf_quick` (bỏ nghiên cứu) và `wf_content` (chỉ sản xuất, không đăng).
 
 ### Nguyên tắc trung thực của kết quả
 
@@ -150,4 +161,5 @@ Mở rộng: engine dùng hàng đợi trong SQLite + event bus nội bộ, phù
 - Chưa kiểm thử với tài khoản Zalo/Meta/TikTok thật (xem lưu ý ở trên).
 - TikTok photo mode, Facebook album nhiều ảnh, Zalo broadcast/ZNS.
 - Thu số liệu TikTok (cần scope `video.list`) và lịch thu số liệu định kỳ sau khi đăng.
-- Ảnh tham chiếu giao diện chưa được tải lên trong phiên này — giao diện được thiết kế theo mô tả (đảo nổi isometric, pastel). Gửi ảnh để tinh chỉnh tiếp.
+- Tạo ảnh bằng AI chưa tích hợp (thẻ chữ minh họa đã có). Theo dõi diễn biến mới của một chủ đề cũ: hiện làm bằng cách tạo phiên săn tin mới nêu rõ chủ đề.
+- Ảnh tham chiếu giao diện chưa được tải lên — giao diện thiết kế theo mô tả (đảo nổi isometric, pastel).

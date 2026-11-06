@@ -1,6 +1,7 @@
 import { config } from './config.js';
 import { bootstrap } from './bootstrap.js';
-import { buildApp } from './app.js';
+import { buildApp, getMode } from './app.js';
+import { runAutoHunt } from './orchestrator/autohunt.js';
 import { engine } from './orchestrator/engine.js';
 import { initVault, vaultKeySource } from './core/vault.js';
 import { users } from './db/index.js';
@@ -9,6 +10,7 @@ await bootstrap();
 initVault();
 const app = await buildApp();
 engine.start();
+setInterval(() => { try { runAutoHunt(getMode()); } catch (e) { console.error('autohunt', e); } }, 30000);
 await app.listen({ port: config.port, host: config.host });
 
 console.log(`\n🏢 AI Office đang chạy: http://${config.host === '0.0.0.0' ? 'localhost' : config.host}:${config.port}`);

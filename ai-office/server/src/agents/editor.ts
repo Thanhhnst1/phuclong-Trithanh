@@ -1,91 +1,87 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import type { AgentImpl } from './types.js';
-import { assets } from '../db/index.js';
+import { assets, settings, stories } from '../db/index.js';
 import { FatalError, type Platform } from '../core/types.js';
-import { absPath, FORMATS, hasFfmpeg, makeSlideshow, renderPoster, storeAsset, type FormatKey } from '../media/index.js';
-import { truncate } from '../core/util.js';
+import { absPath, FORMATS, hasFfmpeg, makeSlideshow, renderCard, storeAsset, type FormatKey } from '../media/index.js';
 
-/** Which poster formats each platform needs. */
+/** Which image format each platform uses. */
 export const PLATFORM_FORMATS: Record<Platform, FormatKey[]> = {
-  facebook: ['square'],
-  zalo: ['landscape'],
+  facebook: ['portrait'],
   threads: ['portrait'],
+  zalo: ['landscape'],
   tiktok: ['vertical'],
 };
 
 export interface EditOutput {
-  posters: { assetId: string; format: FormatKey; sourceId: string }[];
-  video: string | null;
+  cards: { assetId: string; format: FormatKey; storyId: string; illustration: boolean }[];
+  videos: { assetId: string; storyId: string }[];
   videoNote: string | null;
 }
 
+/** Image designer: one card per selected story and platform format. Uses the user's sourced photo when provided. */
 export const editor: AgentImpl = {
   async run(ctx) {
-    const plan = ctx.campaign.plan!;
-    const sel: string[] = ctx.inputs.collect?.selected ?? [];
-    const sources = sel.map((id) => assets.get(id)).filter((a): a is NonNullable<typeof a> => !!a).slice(0, 3);
-    if (!sources.length) throw new FatalError('Không có ảnh đầu vào từ Asset Collector');
-
+    const selected = stories.forCampaign(ctx.campaign.id).filter((s) => s.status === 'selected');
+    if (!selected.length) throw new FatalError('Chưa có chủ đề nào được chọn');
     const formats = [...new Set(ctx.campaign.platforms.flatMap((p) => PLATFORM_FORMATS[p]))];
-    if (!formats.length) formats.push('square');
-    const logo = assets.list({ campaignId: ctx.campaign.id, role: 'logo' })[0] ?? assets.list({ library: true }).find((a) => a.role === 'logo');
-    const logoBuf = logo ? fs.readFileSync(absPath(logo.path)) : null;
-    if (!logo) ctx.log('Chưa có logo (tải ảnh với vai trò "logo" để tự chèn).');
+    const brand = settings.get('brand.name');
 
-    // Remove previous edits when the step is retried.
     for (const old of assets.list({ campaignId: ctx.campaign.id, role: 'edited' })) {
       try { fs.unlinkSync(absPath(old.path)); } catch { /* ignore */ }
       assets.remove(old.id);
     }
-
-    const posters: EditOutput['posters'] = [];
-    const total = sources.length * formats.length;
+    const uploads = assets.list({ campaignId: ctx.campaign.id, role: 'source' }).filter((a) => a.kind === 'image');
+    const cards: EditOutput['cards'] = [];
+    const total = selected.length * formats.length;
     let i = 0;
-    for (const src of sources) {
-      const buf = fs.readFileSync(absPath(src.path));
+    for (const s of selected) {
+      const photo = uploads.find((a) => a.meta?.storyId === s.id);
+      if (!photo) ctx.log(`"${s.title.slice(0, 50)}": chưa có ảnh có nguồn → dùng thẻ chữ gắn nhãn "Ảnh minh họa".`);
       for (const f of formats) {
         i++;
-        ctx.progress(0.05 + (0.65 * i) / total, `Đang thiết kế poster ${FORMATS[f].label} (${i}/${total})...`);
-        const out = await renderPoster(buf, {
-          format: f,
-          title: truncate(plan.headline || plan.product, 70),
-          subtitle: plan.keyMessages[0],
-          logo: logoBuf,
+        ctx.progress(0.05 + (0.7 * i) / total, `Đang thiết kế ảnh ${FORMATS[f].label} (${i}/${total})…`);
+        const buf = await renderCard({
+          format: f, title: s.title, category: s.category || 'Chuyện lạ', brand,
+          photo: photo ? fs.readFileSync(absPath(photo.path)) : null, credit: photo?.source ?? null,
         });
         const a = await storeAsset({
-          buffer: out, filename: `${f}-${src.label}.jpg`, campaignId: ctx.campaign.id, role: 'edited',
-          source: `Biên tập từ: ${src.label}`, license: src.license, label: `${FORMATS[f].label} · ${src.label}`, derivedFrom: src.id, meta: { format: f },
+          buffer: buf, filename: `${f}.jpg`, campaignId: ctx.campaign.id, role: 'edited',
+          source: photo ? `Ảnh gốc: ${photo.source}` : 'Thẻ chữ tự thiết kế (ảnh minh họa)', license: photo?.license ?? 'Tự thiết kế',
+          label: `${FORMATS[f].label} · ${s.title.slice(0, 40)}`, derivedFrom: photo?.id ?? null,
+          meta: { format: f, storyId: s.id, illustration: !photo },
         });
-        posters.push({ assetId: a.id, format: f, sourceId: src.id });
+        cards.push({ assetId: a.id, format: f, storyId: s.id, illustration: !photo });
         await ctx.pace();
       }
     }
 
-    let video: string | null = null;
+    const videos: EditOutput['videos'] = [];
     let videoNote: string | null = null;
     if (ctx.campaign.platforms.includes('tiktok')) {
       if (await hasFfmpeg()) {
-        ctx.progress(0.8, 'Đang dựng video 9:16...');
-        const verticals = posters.filter((p) => p.format === 'vertical').map((p) => absPath(assets.get(p.assetId)!.path));
-        const audio = assets.list({ campaignId: ctx.campaign.id }).find((a) => a.kind === 'audio');
-        const rel = path.join(ctx.campaign.id, `video-${Date.now()}.mp4`);
-        await makeSlideshow(verticals, absPath(rel), { secondsPerImage: 3, audio: audio ? absPath(audio.path) : null, signal: ctx.signal });
-        const v = await storeAsset({
-          buffer: fs.readFileSync(absPath(rel)), filename: 'slideshow.mp4', campaignId: ctx.campaign.id, role: 'edited',
-          source: 'Dựng tự động từ poster', license: 'Theo giấy phép ảnh gốc', label: 'Video 9:16', meta: { format: 'vertical', seconds: verticals.length * 3 },
-        });
-        fs.unlinkSync(absPath(rel));
-        video = v.id;
+        for (const s of selected) {
+          ctx.progress(0.85, 'Đang dựng video 9:16…');
+          const vert = cards.filter((c) => c.storyId === s.id && c.format === 'vertical').map((c) => absPath(assets.get(c.assetId)!.path));
+          if (!vert.length) continue;
+          const rel = path.join(ctx.campaign.id, `video-${Date.now()}.mp4`);
+          await makeSlideshow(vert, absPath(rel), { secondsPerImage: 6, signal: ctx.signal });
+          const v = await storeAsset({
+            buffer: fs.readFileSync(absPath(rel)), filename: 'video.mp4', campaignId: ctx.campaign.id, role: 'edited',
+            source: 'Dựng tự động từ thẻ ảnh', license: 'Tự thiết kế', label: `Video 9:16 · ${s.title.slice(0, 40)}`, meta: { format: 'vertical', storyId: s.id },
+          });
+          fs.unlinkSync(absPath(rel));
+          videos.push({ assetId: v.id, storyId: s.id });
+        }
       } else {
-        videoNote = 'Không tìm thấy ffmpeg nên chưa dựng được video — cài ffmpeg rồi chạy lại bước này.';
+        videoNote = 'Không tìm thấy ffmpeg nên chưa dựng được video TikTok.';
         ctx.log(videoNote, 'warn');
       }
     }
     return {
-      output: { posters, video, videoNote } satisfies EditOutput,
+      output: { cards, videos, videoNote } satisfies EditOutput,
       resultKind: 'real',
-      summary: `Tạo ${posters.length} poster${video ? ' + 1 video' : ''}`,
+      summary: `Thiết kế ${cards.length} ảnh${videos.length ? ` + ${videos.length} video` : ''}`,
     };
   },
 };

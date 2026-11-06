@@ -11,55 +11,40 @@ const PUB_KEYS = ['publish_zalo', 'publish_facebook', 'publish_tiktok', 'publish
 
 export const BUILTIN_WORKFLOWS: Workflow[] = [
   {
-    id: 'wf_full',
-    name: 'Quảng bá đa nền tảng (đầy đủ)',
-    description: 'Lập kế hoạch → Nghiên cứu ∥ Thu thập → Chỉnh sửa ∥ Viết bài → Duyệt → Đăng đa nền tảng → Số liệu → Báo cáo',
+    id: 'wf_newsroom',
+    name: 'Tòa soạn: săn tin → kiểm chứng → đăng',
+    description: 'Lập kế hoạch → Săn tin → Kiểm chứng → Anh chọn chủ đề → Thiết kế ảnh ∥ Viết bài → Anh duyệt bài → Đăng → Số liệu → Báo cáo',
     builtin: true,
     steps: [
-      { key: 'plan', agent: 'orchestrator', title: 'Lập kế hoạch', deps: [], maxAttempts: 2 },
-      { key: 'research', agent: 'researcher', title: 'Nghiên cứu thị trường', deps: ['plan'], timeoutMs: 300000 },
-      { key: 'collect', agent: 'collector', title: 'Thu thập tư liệu', deps: ['plan'] },
-      { key: 'edit', agent: 'editor', title: 'Chỉnh sửa ảnh & video', deps: ['collect'], timeoutMs: 300000 },
-      { key: 'write', agent: 'writer', title: 'Viết nội dung', deps: ['research'], timeoutMs: 300000 },
-      { key: 'approve', agent: 'orchestrator', title: 'Người dùng phê duyệt', deps: ['edit', 'write'], type: 'approval' },
+      { key: 'plan', agent: 'orchestrator', title: 'Lập kế hoạch săn tin', deps: [], maxAttempts: 2 },
+      { key: 'research', agent: 'researcher', title: 'Săn chủ đề HOT', deps: ['plan'], timeoutMs: 600000 },
+      { key: 'verify', agent: 'factchecker', title: 'Kiểm chứng thông tin', deps: ['research'], timeoutMs: 1800000, maxAttempts: 2 },
+      { key: 'select', agent: 'orchestrator', title: 'Chọn chủ đề phát triển', deps: ['verify'], type: 'approval' },
+      { key: 'edit', agent: 'editor', title: 'Thiết kế ảnh minh họa', deps: ['select'], timeoutMs: 300000 },
+      { key: 'write', agent: 'writer', title: 'Viết bài', deps: ['select'], timeoutMs: 900000 },
+      { key: 'approve', agent: 'orchestrator', title: 'Duyệt bài trước khi đăng', deps: ['edit', 'write'], type: 'approval' },
       ...publishSteps(['approve']),
       { key: 'metrics', agent: 'reporter', title: 'Thu thập kết quả', deps: PUB_KEYS, depMode: 'settled' },
       { key: 'report', agent: 'reporter', title: 'Xuất báo cáo', deps: ['metrics'], depMode: 'settled' },
     ],
   },
   {
-    id: 'wf_quick',
-    name: 'Đăng nhanh (bỏ nghiên cứu)',
-    description: 'Dùng ảnh có sẵn: Thu thập → Chỉnh sửa ∥ Viết bài → Duyệt → Đăng → Báo cáo',
+    id: 'wf_proposals',
+    name: 'Chỉ đề xuất chủ đề (không viết bài)',
+    description: 'Săn tin → Kiểm chứng → Báo cáo danh sách 5–10 chủ đề kèm nguồn, để anh tự triển khai.',
     builtin: true,
     steps: [
-      { key: 'plan', agent: 'orchestrator', title: 'Lập kế hoạch', deps: [] },
-      { key: 'collect', agent: 'collector', title: 'Thu thập tư liệu', deps: ['plan'] },
-      { key: 'edit', agent: 'editor', title: 'Chỉnh sửa ảnh & video', deps: ['collect'] },
-      { key: 'write', agent: 'writer', title: 'Viết nội dung', deps: ['plan'] },
-      { key: 'approve', agent: 'orchestrator', title: 'Người dùng phê duyệt', deps: ['edit', 'write'], type: 'approval' },
-      ...publishSteps(['approve']),
-      { key: 'report', agent: 'reporter', title: 'Xuất báo cáo', deps: PUB_KEYS, depMode: 'settled' },
-    ],
-  },
-  {
-    id: 'wf_content',
-    name: 'Chỉ sản xuất nội dung (không đăng)',
-    description: 'Nghiên cứu → Thu thập → Chỉnh sửa ∥ Viết → Duyệt → Báo cáo. Phù hợp khi muốn tự đăng.',
-    builtin: true,
-    steps: [
-      { key: 'plan', agent: 'orchestrator', title: 'Lập kế hoạch', deps: [] },
-      { key: 'research', agent: 'researcher', title: 'Nghiên cứu thị trường', deps: ['plan'] },
-      { key: 'collect', agent: 'collector', title: 'Thu thập tư liệu', deps: ['plan'] },
-      { key: 'edit', agent: 'editor', title: 'Chỉnh sửa ảnh & video', deps: ['collect'] },
-      { key: 'write', agent: 'writer', title: 'Viết nội dung', deps: ['research'] },
-      { key: 'approve', agent: 'orchestrator', title: 'Người dùng phê duyệt', deps: ['edit', 'write'], type: 'approval' },
-      { key: 'report', agent: 'reporter', title: 'Xuất báo cáo', deps: ['approve'], depMode: 'settled' },
+      { key: 'plan', agent: 'orchestrator', title: 'Lập kế hoạch săn tin', deps: [] },
+      { key: 'research', agent: 'researcher', title: 'Săn chủ đề HOT', deps: ['plan'], timeoutMs: 600000 },
+      { key: 'verify', agent: 'factchecker', title: 'Kiểm chứng thông tin', deps: ['research'], timeoutMs: 1800000, maxAttempts: 2 },
+      { key: 'report', agent: 'reporter', title: 'Xuất báo cáo chủ đề', deps: ['verify'], depMode: 'settled' },
     ],
   },
 ];
 
 export function seedWorkflows() {
+  const ids = new Set(BUILTIN_WORKFLOWS.map((w) => w.id));
+  for (const w of workflows.list()) if (w.builtin && !ids.has(w.id)) workflows.forceRemove(w.id);
   for (const w of BUILTIN_WORKFLOWS) workflows.upsert(w);
 }
 

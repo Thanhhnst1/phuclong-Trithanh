@@ -1,5 +1,5 @@
 export type AgentId =
-  | 'orchestrator' | 'researcher' | 'collector' | 'editor' | 'writer'
+  | 'orchestrator' | 'researcher' | 'factchecker' | 'editor' | 'writer'
   | 'zalo' | 'facebook' | 'tiktok' | 'threads' | 'reporter';
 export type Platform = 'zalo' | 'facebook' | 'tiktok' | 'threads';
 export const PLATFORMS: Platform[] = ['zalo', 'facebook', 'tiktok', 'threads'];
@@ -31,19 +31,35 @@ export interface Asset {
   id: string; campaignId: string | null; kind: string; role: string; path: string; mime: string; width: number | null; height: number | null;
   source: string; license: string; label: string; meta: any; createdAt: string; derivedFrom: string | null;
 }
+export interface StorySource { title: string; url: string; type?: string }
+export interface Story {
+  id: string; campaignId: string; title: string; summary: string; when: string; where: string; category: string;
+  verification: 'confirmed' | 'partial' | 'insufficient' | 'demo'; sources: StorySource[]; appealReasons: string; angle: string; appealScore: number;
+  confirmedFacts: string[]; unverifiedClaims: string[]; hypotheses: string[]; risks: string[]; mediaNotes: string; checkNote: string;
+  status: 'candidate' | 'proposed' | 'held' | 'rejected' | 'selected' | 'published'; createdAt: string; campaignTitle?: string;
+}
+export const VERIFY_META: Record<Story['verification'], [string, string]> = {
+  confirmed: ['Đã xác nhận', 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-300'],
+  partial: ['Xác nhận một phần', 'bg-sky-100 text-sky-700 dark:bg-sky-500/20 dark:text-sky-300'],
+  insufficient: ['Chưa đủ bằng chứng', 'bg-amber-100 text-amber-700 dark:bg-amber-500/20 dark:text-amber-300'],
+  demo: ['MẪU DEMO', 'bg-fuchsia-100 text-fuchsia-700 dark:bg-fuchsia-500/20 dark:text-fuchsia-300'],
+};
+export const STORY_STATUS: Record<Story['status'], string> = {
+  candidate: 'Ứng viên', proposed: 'Đề xuất', held: 'Chờ kiểm chứng', rejected: 'Đã loại', selected: 'Đã chọn', published: 'Đã đăng',
+};
 export interface Content {
-  id: string; campaignId: string; platform: Platform; variant: number; title: string; body: string; hashtags: string[]; cta: string;
+  id: string; campaignId: string; storyId: string | null; platform: Platform; variant: number; title: string; body: string; hashtags: string[]; cta: string;
   mediaIds: string[]; status: 'draft' | 'approved' | 'rejected'; resultKind: string;
 }
 export interface Publication {
   id: string; platform: Platform; mode: 'real' | 'simulated' | 'manual'; status: string; url: string | null; error: string | null;
   metrics: Record<string, number> | null; contentId: string | null; response: any; createdAt: string;
 }
-export interface CampaignDetail { campaign: Campaign; tasks: Task[]; contents: Content[]; assets: Asset[]; publications: Publication[] }
+export interface CampaignDetail { campaign: Campaign; tasks: Task[]; contents: Content[]; stories: Story[]; assets: Asset[]; publications: Publication[] }
 export interface LogRow { id: number; campaignId: string | null; taskId: string | null; agent: string | null; level: string; message: string; createdAt: string }
 export interface Workflow { id: string; name: string; description: string; builtin: boolean; steps: any[] }
 export interface SystemInfo {
-  mode: 'demo' | 'production'; llm: { configured: boolean; active: boolean; model: string }; ffmpeg: boolean;
+  mode: 'demo' | 'production'; brand: string; llm: { configured: boolean; active: boolean; model: string }; ffmpeg: boolean;
   publicBaseUrl: string | null; vaultKeySource: 'env' | 'file'; integrations: Record<string, boolean>;
 }
 

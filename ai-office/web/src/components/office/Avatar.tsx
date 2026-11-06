@@ -2,7 +2,7 @@ import type { AgentId, AgentState } from '../../lib/api';
 import { shade } from './iso';
 
 const HAIR: Partial<Record<AgentId, string>> = {
-  researcher: '#3b2f2f', collector: '#7a4b2a', editor: '#d9468b', writer: '#2f4f3a', orchestrator: '#4b3b8f',
+  researcher: '#3b2f2f', factchecker: '#7a4b2a', editor: '#d9468b', writer: '#2f4f3a', orchestrator: '#4b3b8f',
   zalo: '#1f3b73', facebook: '#25324d', tiktok: '#111', threads: '#222', reporter: '#8a5a00',
 };
 
@@ -10,17 +10,24 @@ const HAIR: Partial<Record<AgentId, string>> = {
 function Prop({ id, color }: { id: AgentId; color: string }) {
   switch (id) {
     case 'researcher':
+      // satellite dish: scanning the web for stories
       return (
-        <g className="av-prop-sway fbox" transform="translate(14,-20)">
-          <circle r={6} fill="#e0f2ff" stroke="#334" strokeWidth={2} />
-          <line x1={4} y1={4} x2={10} y2={10} stroke="#334" strokeWidth={3} strokeLinecap="round" />
+        <g className="av-prop-sway fbox" transform="translate(15,-30)">
+          <line x1={0} y1={0} x2={0} y2={12} stroke="#556" strokeWidth={2} />
+          <path d="M-8,-2 Q0,10 8,-2Z" fill="#e0f2ff" stroke="#334" strokeWidth={1.5} />
+          <circle cx={0} cy={-6} r={2} fill="#f43f5e" />
         </g>
       );
-    case 'collector':
+    case 'factchecker':
+      // magnifier over a document
       return (
-        <g className="av-hand" transform="translate(-9,-22)">
-          <rect width={18} height={12} rx={2} fill="#d8a46b" stroke="#8a5a2b" />
-          <line x1={0} y1={4} x2={18} y2={4} stroke="#8a5a2b" />
+        <g transform="translate(-16,-26)">
+          <rect width={12} height={15} rx={1.5} fill="white" stroke="#9ca3af" />
+          <path d="M3,8 L5.5,10.5 L9.5,5" stroke="#22c55e" strokeWidth={2} fill="none" />
+          <g className="av-prop-sway fbox" transform="translate(30,4)">
+            <circle r={6} fill="#e0f2ff" stroke="#334" strokeWidth={2} />
+            <line x1={4} y1={4} x2={10} y2={10} stroke="#334" strokeWidth={3} strokeLinecap="round" />
+          </g>
         </g>
       );
     case 'editor':

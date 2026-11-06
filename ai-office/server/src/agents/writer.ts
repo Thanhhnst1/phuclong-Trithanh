@@ -1,13 +1,17 @@
 import type { AgentImpl } from './types.js';
-import { contents } from '../db/index.js';
-import type { Platform } from '../core/types.js';
-import { slug } from '../core/util.js';
+import { contents, stories } from '../db/index.js';
+import { FatalError, type Platform, type Story } from '../core/types.js';
+import { ETHICS } from '../orchestrator/planner.js';
+import { domainOf } from './storyUtil.js';
 
 export const PLATFORM_STYLE: Record<Platform, { label: string; maxChars: number; guide: string }> = {
-  facebook: { label: 'Facebook Page', maxChars: 2000, guide: 'Bài 80-200 chữ, mở đầu gây chú ý, xuống dòng dễ đọc, emoji vừa phải, CTA nhắn tin/bình luận, 3-6 hashtag.' },
-  zalo: { label: 'Zalo OA', maxChars: 2000, guide: 'Văn phong lịch sự, rõ ràng, thông tin cụ thể (giá, liên hệ), ít hashtag (0-2), tiêu đề ≤ 80 ký tự.' },
-  tiktok: { label: 'TikTok', maxChars: 2200, guide: 'Caption rất ngắn 1-2 câu, hook mạnh trong 3 giây đầu, 4-6 hashtag xu hướng.' },
-  threads: { label: 'Threads', maxChars: 500, guide: 'Giọng tự nhiên, đối thoại, ≤ 400 ký tự, 1-2 hashtag, đặt câu hỏi gợi tương tác.' },
+  facebook: {
+    label: 'Facebook', maxChars: 5000,
+    guide: 'Bài Facebook: câu hook thật mạnh 1–2 dòng đầu; kể chuyện tự nhiên có diễn biến và cao trào; giải thích chi tiết gây bất ngờ; ngôn ngữ gần gũi; xuống dòng dễ đọc; kết bằng câu hỏi mở; 3–5 hashtag; dòng cuối "Nguồn: …".',
+  },
+  threads: { label: 'Threads', maxChars: 500, guide: 'Bản Threads ≤ 450 ký tự: hook + ý chính + câu hỏi, 1–2 hashtag, ghi nguồn ngắn.' },
+  zalo: { label: 'Zalo OA', maxChars: 3000, guide: 'Bài Zalo: tiêu đề ≤ 80 ký tự, văn phong rõ ràng, ít hashtag, ghi nguồn.' },
+  tiktok: { label: 'TikTok', maxChars: 2200, guide: 'Caption TikTok 1–2 câu gây tò mò + 4 hashtag, ghi nguồn ngắn.' },
 };
 
 const SCHEMA = {
@@ -18,15 +22,13 @@ const SCHEMA = {
     variants: {
       type: 'array',
       items: {
-        type: 'object',
-        additionalProperties: false,
-        required: ['platform', 'title', 'body', 'hashtags', 'cta'],
+        type: 'object', additionalProperties: false, required: ['platform', 'title', 'body', 'hashtags', 'cta'],
         properties: {
           platform: { type: 'string', enum: ['zalo', 'facebook', 'tiktok', 'threads'] },
-          title: { type: 'string' },
+          title: { type: 'string', description: 'Tiêu đề gây tò mò, KHÔNG giật tít sai sự thật' },
           body: { type: 'string' },
           hashtags: { type: 'array', items: { type: 'string' } },
-          cta: { type: 'string' },
+          cta: { type: 'string', description: 'Câu hỏi mở cuối bài' },
         },
       },
     },
@@ -35,80 +37,82 @@ const SCHEMA = {
 
 type Draft = { platform: Platform; title: string; body: string; hashtags: string[]; cta: string };
 
-function demoDrafts(platform: Platform, plan: any, research: any): Draft[] {
-  const p = plan.product as string;
-  const tag = '#' + slug(p).replace(/-/g, '');
-  const m = plan.keyMessages as string[];
-  const idea = research?.ideas?.[0] ?? '';
-  const base: Draft[] = [
-    { platform, title: `${p} — lựa chọn đáng tin cậy`, body: `✨ ${p}\n\n${m.map((x) => `✅ ${x}`).join('\n')}\n\n📩 Nhắn tin ngay để được tư vấn!`, hashtags: [tag, '#chatluong', '#uudai'], cta: 'Nhắn tin để được tư vấn' },
-    { platform, title: `Bạn đã biết về ${p}?`, body: `Đang tìm ${p.toLowerCase()} chuẩn chất lượng? 🤔\n${m[0] ?? ''}. ${m[1] ?? ''}.\n${idea ? `\n💡 ${idea}\n` : ''}\n👉 Bình luận "QUAN TÂM" để nhận báo giá.`, hashtags: [tag, '#tuvan'], cta: 'Bình luận để nhận báo giá' },
-    { platform, title: `Ưu đãi ${p}`, body: `🔥 Ưu đãi có hạn cho ${p}!\n${m.slice(0, 2).join(' • ')}\n\n📞 Liên hệ ngay hôm nay.`, hashtags: [tag, '#khuyenmai', '#hotdeal'], cta: 'Liên hệ ngay' },
-  ];
-  return base.map((d) => {
-    if (platform === 'tiktok') return { ...d, body: d.body.split('\n')[0] + ' 👇', hashtags: [...d.hashtags, '#fyp', '#xuhuong'] };
-    if (platform === 'threads') return { ...d, body: d.body.slice(0, 380) };
-    if (platform === 'zalo') return { ...d, hashtags: d.hashtags.slice(0, 1) };
-    return d;
-  });
+function sourceLine(s: Story) {
+  return s.sources.length ? `Nguồn: ${s.sources.slice(0, 3).map((x) => domainOf(x.url)).join(', ')}` : '';
 }
 
+function demoDrafts(s: Story, platforms: Platform[]): Draft[] {
+  return platforms.flatMap((p) => [1, 2].map((v) => ({
+    platform: p,
+    title: `[BÀI MẪU DEMO] ${s.title.replace('[MẪU DEMO] ', '')}`,
+    body: `[BÀI MẪU DEMO — không phải tin thật]\n\n${v === 1 ? '😮 Câu hook mở đầu sẽ nằm ở đây.' : '🤔 Một góc kể khác cho cùng chủ đề.'}\n\nKhi có Claude API, Biên tập viên sẽ kể lại câu chuyện đã kiểm chứng, tách rõ điều đã xác nhận và điều còn là giả thuyết, rồi ghi nguồn ở cuối bài.\n\nBạn nghĩ sao về chuyện này?`,
+    hashtags: ['#chuyenla', '#demo'],
+    cta: 'Bạn nghĩ sao về chuyện này?',
+  })));
+}
+
+/** Editor: turns each selected, verified story into ready-to-post copy (2 variants per platform). */
 export const writer: AgentImpl = {
   async run(ctx) {
     const plan = ctx.campaign.plan!;
-    const research = ctx.inputs.research ?? null;
+    const selected = stories.forCampaign(ctx.campaign.id).filter((s) => s.status === 'selected');
+    if (!selected.length) throw new FatalError('Chưa có chủ đề nào được chọn');
     const platforms = ctx.campaign.platforms.length ? ctx.campaign.platforms : (['facebook'] as Platform[]);
-    const notes: string[] = (plan as any).revisionNotes ?? [];
+    const notes = plan.revisionNotes ?? [];
     contents.deleteForCampaign(ctx.campaign.id);
 
-    let drafts: Draft[] = [];
+    let total = 0;
     let kind: 'ai' | 'simulated' = 'simulated';
-    if (ctx.llm) {
-      ctx.progress(0.2, `Đang viết ${platforms.length * 3} phương án nội dung...`);
-      const r = await ctx.llm.json<{ variants: Draft[] }>({
-        system: 'Bạn là copywriter mạng xã hội tại Việt Nam. Viết tiếng Việt tự nhiên, đời thường, đúng văn phong từng nền tảng. Không bịa giá, khuyến mãi hay số liệu không có trong brief.',
-        prompt: [
-          `Sản phẩm: ${plan.product}`,
-          `Mục tiêu: ${plan.goalSummary}`,
-          `Đối tượng: ${plan.audience}`,
-          `Giọng điệu: ${plan.tone}`,
-          `Thông điệp chính: ${plan.keyMessages.join('; ')}`,
-          research ? `Nghiên cứu: ${research.summary}\nÝ tưởng: ${(research.ideas ?? []).join('; ')}` : '',
-          notes.length ? `YÊU CẦU CHỈNH SỬA TỪ NGƯỜI DUYỆT: ${notes.join(' | ')}` : '',
-          '',
-          'Viết đúng 3 phương án khác nhau cho MỖI nền tảng sau:',
-          ...platforms.map((p) => `- ${p}: ${PLATFORM_STYLE[p].guide} (tối đa ${PLATFORM_STYLE[p].maxChars} ký tự)`),
-        ].filter(Boolean).join('\n'),
-        schema: SCHEMA,
-        effort: 'medium',
-        signal: ctx.signal,
-      });
-      drafts = r.variants.filter((v) => platforms.includes(v.platform));
-      kind = 'ai';
-    } else {
-      for (const p of platforms) {
-        ctx.progress(0.2 + 0.6 * (platforms.indexOf(p) / platforms.length), `Đang viết caption ${PLATFORM_STYLE[p].label}... (mẫu demo)`);
-        drafts.push(...demoDrafts(p, plan, research));
+    for (const [i, s] of selected.entries()) {
+      ctx.progress(0.1 + (0.8 * i) / selected.length, `Đang viết bài ${i + 1}/${selected.length}: ${s.title.slice(0, 40)}…`);
+      let drafts: Draft[];
+      if (ctx.llm && s.verification !== 'demo') {
+        const r = await ctx.llm.json<{ variants: Draft[] }>({
+          system: `Bạn là biên tập viên một trang Facebook nội dung "Thật sự có chuyện này sao?" tại Việt Nam. Kể chuyện cuốn hút nhưng tuyệt đối trung thực. ${ETHICS.join(' ')} Chỉ dùng dữ kiện được cung cấp, không thêm chi tiết, số liệu, lời nói. Nếu là chuyện bí ẩn: nói rõ điều đã xác nhận, điều còn là giả thuyết, hiện chưa có kết luận chính thức.`,
+          prompt: [
+            `CÂU CHUYỆN: ${s.title}`,
+            `Tóm tắt: ${s.summary}`,
+            `Thời gian/địa điểm: ${s.when} — ${s.where}`,
+            `Tình trạng kiểm chứng: ${s.verification}`,
+            `Đã xác nhận: ${s.confirmedFacts.join(' | ') || '—'}`,
+            `Chưa kiểm chứng / lời kể: ${s.unverifiedClaims.join(' | ') || '—'}`,
+            `Giả thuyết: ${s.hypotheses.join(' | ') || '—'}`,
+            `Góc khai thác: ${s.angle}. Lý do thu hút: ${s.appealReasons}`,
+            `${sourceLine(s)}`,
+            s.checkNote ? `Ghi chú kiểm chứng: ${s.checkNote}` : '',
+            notes.length ? `GÓP Ý CỦA CHỦ KÊNH: ${notes.join(' | ')}` : '',
+            '',
+            'Viết đúng 2 phương án khác nhau cho MỖI nền tảng:',
+            ...platforms.map((p) => `- ${p}: ${PLATFORM_STYLE[p].guide} (tối đa ${PLATFORM_STYLE[p].maxChars} ký tự)`),
+          ].filter(Boolean).join('\n'),
+          schema: SCHEMA,
+          effort: 'medium',
+          signal: ctx.signal,
+        });
+        drafts = r.variants.filter((v) => platforms.includes(v.platform));
+        kind = 'ai';
+      } else {
+        drafts = demoDrafts(s, platforms);
         await ctx.pace();
       }
+      const counter: Record<string, number> = {};
+      const src = sourceLine(s);
+      for (const d of drafts) {
+        counter[d.platform] = (counter[d.platform] ?? 0) + 1;
+        let body = d.body;
+        if (src && !/nguồn/i.test(body)) body = `${body}\n\n${src}`; // every post names its sources
+        contents.create({
+          campaignId: ctx.campaign.id, storyId: s.id, platform: d.platform, variant: counter[d.platform], title: d.title,
+          body: body.slice(0, PLATFORM_STYLE[d.platform].maxChars), hashtags: d.hashtags.map((h) => (h.startsWith('#') ? h : `#${h}`)),
+          cta: d.cta, mediaIds: [], status: 'draft', resultKind: kind === 'ai' ? 'ai' : 'simulated', approvedBy: null, approvedAt: null,
+        });
+        total++;
+      }
     }
-
-    const counter: Record<string, number> = {};
-    for (const d of drafts) {
-      counter[d.platform] = (counter[d.platform] ?? 0) + 1;
-      const max = PLATFORM_STYLE[d.platform].maxChars;
-      contents.create({
-        campaignId: ctx.campaign.id, platform: d.platform, variant: counter[d.platform], title: d.title,
-        body: d.body.slice(0, max), hashtags: d.hashtags.map((h) => (h.startsWith('#') ? h : `#${h}`)), cta: d.cta,
-        mediaIds: [], status: 'draft', resultKind: kind, approvedBy: null, approvedAt: null,
-      });
-    }
-    const missing = platforms.filter((p) => !counter[p]);
-    if (missing.length) ctx.log(`Thiếu nội dung cho: ${missing.join(', ')}`, 'warn');
     return {
-      output: { count: drafts.length, byPlatform: counter },
+      output: { count: total, stories: selected.length },
       resultKind: kind,
-      summary: `Đã hoàn thành ${drafts.length} caption${kind === 'simulated' ? ' (mẫu demo)' : ''}`,
+      summary: `Đã viết ${total} phương án cho ${selected.length} chủ đề${kind === 'simulated' ? ' (mẫu demo)' : ''}`,
     };
   },
 };

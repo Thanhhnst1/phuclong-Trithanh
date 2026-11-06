@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { BarChart3, CheckSquare, FolderOpen, GitBranch, LogOut, Megaphone, Moon, Plug, ScrollText, Sun, Users, Wifi, WifiOff } from 'lucide-react';
+import { BarChart3, CheckSquare, Newspaper, FolderOpen, GitBranch, LogOut, Megaphone, Moon, Plug, ScrollText, Sun, Users, Wifi, WifiOff } from 'lucide-react';
 import { useStore, type Tab } from './lib/store';
 import { api } from './lib/api';
 import { OfficeScene } from './components/office/OfficeScene';
@@ -7,14 +7,16 @@ import { AgentStrip } from './components/office/AgentStrip';
 import { Login } from './components/Login';
 import { CampaignsPanel } from './components/panels/CampaignsPanel';
 import { ApprovalPanel } from './components/panels/ApprovalPanel';
+import { TopicsPanel } from './components/panels/TopicsPanel';
 import { ReportsPanel } from './components/panels/ReportsPanel';
 import { AssetsPanel } from './components/panels/AssetsPanel';
 import { IntegrationsPanel } from './components/panels/IntegrationsPanel';
 import { AgentDrawer, LogsPanel, UsersPanel, WorkflowsPanel } from './components/panels/MiscPanels';
 
 const TABS: { id: Tab; label: string; icon: typeof Megaphone; admin?: boolean }[] = [
-  { id: 'campaigns', label: 'Chiến dịch', icon: Megaphone },
-  { id: 'approval', label: 'Duyệt', icon: CheckSquare },
+  { id: 'campaigns', label: 'Săn tin', icon: Megaphone },
+  { id: 'topics', label: 'Chủ đề', icon: Newspaper },
+  { id: 'approval', label: 'Duyệt bài', icon: CheckSquare },
   { id: 'assets', label: 'Tư liệu', icon: FolderOpen },
   { id: 'reports', label: 'Báo cáo', icon: BarChart3 },
   { id: 'integrations', label: 'Kết nối', icon: Plug },
@@ -51,7 +53,7 @@ export default function App() {
   return (
     <div className="flex h-full flex-col">
       <header className="flex items-center gap-3 border-b border-line bg-panel px-3 py-2">
-        <div className="flex items-center gap-2 font-extrabold"><span className="text-xl">🏝️</span><span className="hidden sm:inline">AI Office</span></div>
+        <div className="flex items-center gap-2 font-extrabold"><span className="text-xl">🏝️</span><span className="hidden sm:inline">{s.system?.brand || 'Tòa soạn AI'}</span></div>
         {s.system && (
           <span className={`chip ${s.system.mode === 'demo' ? 'bg-fuchsia-100 text-fuchsia-700 dark:bg-fuchsia-500/20 dark:text-fuchsia-300' : 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-300'}`}>
             {s.system.mode === 'demo' ? 'DEMO MODE' : 'PRODUCTION'}
@@ -86,6 +88,7 @@ export default function App() {
           </nav>
           <div className="min-h-0 flex-1 overflow-y-auto p-3">
             {s.tab === 'campaigns' && <CampaignsPanel />}
+            {s.tab === 'topics' && <TopicsPanel />}
             {s.tab === 'approval' && <ApprovalPanel />}
             {s.tab === 'assets' && <AssetsPanel />}
             {s.tab === 'reports' && <ReportsPanel />}

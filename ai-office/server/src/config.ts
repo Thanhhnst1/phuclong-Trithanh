@@ -29,8 +29,8 @@ export const config = {
   publicBaseUrl: (env.PUBLIC_BASE_URL ?? '').replace(/\/$/, ''),
   /** Master key used to encrypt stored credentials. MUST be set in production. */
   appSecret: env.APP_SECRET ?? '',
-  /** Directory scanned once to seed the local media library (defaults to the repository root product photos). */
-  seedDir: path.resolve(SERVER_ROOT, env.SEED_DIR ?? '../..'),
+  /** Optional directory scanned once to seed the shared media library. */
+  seedDir: env.SEED_DIR ? path.resolve(SERVER_ROOT, env.SEED_DIR) : null,
   workerConcurrency: Number(env.WORKER_CONCURRENCY ?? 4),
   defaultModel: env.CLAUDE_MODEL ?? 'claude-opus-5-5',
   fbGraphVersion: env.FB_GRAPH_VERSION ?? 'v23.0',

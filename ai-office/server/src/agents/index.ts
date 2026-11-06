@@ -2,7 +2,7 @@ import type { AgentImpl } from './types.js';
 import type { Task } from '../core/types.js';
 import { planner } from './orchestrator.js';
 import { researcher } from './researcher.js';
-import { collector } from './collector.js';
+import { factchecker } from './factchecker.js';
 import { editor } from './editor.js';
 import { writer } from './writer.js';
 import { publisher } from './publishers.js';
@@ -15,7 +15,7 @@ export function implFor(task: Pick<Task, 'agent' | 'stepKey' | 'platform'>): Age
   switch (task.agent) {
     case 'orchestrator': return planner;
     case 'researcher': return researcher;
-    case 'collector': return collector;
+    case 'factchecker': return factchecker;
     case 'editor': return editor;
     case 'writer': return writer;
     case 'zalo': case 'facebook': case 'tiktok': case 'threads': return publisher(task.agent);

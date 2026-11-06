@@ -1,6 +1,7 @@
 import { DatabaseSync } from 'node:sqlite';
 import crypto from 'node:crypto';
 import type {
+  Story,
   Asset,
   Campaign,
   ContentVariant,
@@ -61,6 +62,11 @@ CREATE TABLE IF NOT EXISTS contents (
   media_json TEXT NOT NULL, status TEXT NOT NULL, result_kind TEXT NOT NULL,
   approved_by TEXT, approved_at TEXT
 );
+CREATE TABLE IF NOT EXISTS stories (
+  id TEXT PRIMARY KEY, campaign_id TEXT NOT NULL, title TEXT NOT NULL, data_json TEXT NOT NULL,
+  verification TEXT NOT NULL, status TEXT NOT NULL, appeal_score REAL NOT NULL, fingerprint TEXT NOT NULL, created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_stories_campaign ON stories(campaign_id);
 CREATE TABLE IF NOT EXISTS publications (
   id TEXT PRIMARY KEY, campaign_id TEXT NOT NULL, platform TEXT NOT NULL, content_id TEXT,
   mode TEXT NOT NULL, status TEXT NOT NULL, external_id TEXT, url TEXT, error TEXT,
@@ -72,6 +78,9 @@ export function openDb(file: string) {
   db = new DatabaseSync(file);
   db.exec('PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON;');
   db.exec(SCHEMA);
+  // lightweight migrations
+  const cols = (db.prepare('PRAGMA table_info(contents)').all() as Row[]).map((c) => c.name);
+  if (!cols.includes('story_id')) db.exec('ALTER TABLE contents ADD COLUMN story_id TEXT');
   return db;
 }
 
@@ -208,6 +217,7 @@ export const workflows = {
     );
   },
   remove: (wid: string) => run('DELETE FROM workflows WHERE id = ? AND builtin = 0', wid),
+  forceRemove: (wid: string) => run('DELETE FROM workflows WHERE id = ?', wid),
 };
 
 // ---------------- campaigns ----------------
@@ -243,7 +253,7 @@ export const campaigns = {
     });
   },
   remove(cid: string) {
-    for (const t of ['tasks', 'logs', 'contents', 'publications']) run(`DELETE FROM ${t} WHERE campaign_id = ?`, cid);
+    for (const t of ['tasks', 'logs', 'contents', 'publications', 'stories']) run(`DELETE FROM ${t} WHERE campaign_id = ?`, cid);
     run('DELETE FROM campaigns WHERE id = ?', cid);
   },
 };
@@ -347,7 +357,7 @@ export const assets = {
 
 // ---------------- contents ----------------
 const mapContent = (r: Row): ContentVariant => ({
-  id: r.id, campaignId: r.campaign_id, platform: r.platform, variant: r.variant, title: r.title, body: r.body,
+  id: r.id, campaignId: r.campaign_id, storyId: r.story_id ?? null, platform: r.platform, variant: r.variant, title: r.title, body: r.body,
   hashtags: pj(r.hashtags_json, []), cta: r.cta, mediaIds: pj(r.media_json, []), status: r.status,
   resultKind: r.result_kind, approvedBy: r.approved_by, approvedAt: r.approved_at,
 });
@@ -358,14 +368,14 @@ export const contents = {
     return r ? mapContent(r) : null;
   },
   approvedFor(campaignId: string, platform: string) {
-    const r = get("SELECT * FROM contents WHERE campaign_id = ? AND platform = ? AND status = 'approved' LIMIT 1", campaignId, platform);
-    return r ? mapContent(r) : null;
+    return all("SELECT * FROM contents WHERE campaign_id = ? AND platform = ? AND status = 'approved' ORDER BY variant", campaignId, platform).map(mapContent);
   },
   deleteForCampaign: (cid: string) => run('DELETE FROM contents WHERE campaign_id = ?', cid),
   create(c: Omit<ContentVariant, 'id'>) {
     const row: ContentVariant = { ...c, id: newId('cnt') };
-    run('INSERT INTO contents VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)', row.id, row.campaignId, row.platform, row.variant, row.title,
-      row.body, JSON.stringify(row.hashtags), row.cta, JSON.stringify(row.mediaIds), row.status, row.resultKind, row.approvedBy, row.approvedAt);
+    run(`INSERT INTO contents (id, campaign_id, platform, variant, title, body, hashtags_json, cta, media_json, status, result_kind,
+      approved_by, approved_at, story_id) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, row.id, row.campaignId, row.platform, row.variant, row.title,
+      row.body, JSON.stringify(row.hashtags), row.cta, JSON.stringify(row.mediaIds), row.status, row.resultKind, row.approvedBy, row.approvedAt, row.storyId);
     return row;
   },
   update: (cid: string, patch: Partial<ContentVariant>) =>
@@ -400,4 +410,34 @@ export const publications = {
       status: ['status', id], url: ['url', id], externalId: ['external_id', id], error: ['error', id],
       response: ['response_json', j], metrics: ['metrics_json', j], updatedAt: ['updated_at', id],
     }),
+};
+
+// ---------------- stories (topic candidates) ----------------
+const mapStory = (r: Row): Story => ({
+  ...pj(r.data_json, {}), id: r.id, campaignId: r.campaign_id, title: r.title, verification: r.verification, status: r.status,
+  appealScore: r.appeal_score, fingerprint: r.fingerprint, createdAt: r.created_at,
+});
+export const stories = {
+  forCampaign: (cid: string) => all('SELECT * FROM stories WHERE campaign_id = ? ORDER BY appeal_score DESC, created_at', cid).map(mapStory),
+  get(sid: string) {
+    const r = get('SELECT * FROM stories WHERE id = ?', sid);
+    return r ? mapStory(r) : null;
+  },
+  /** Every topic ever proposed — used to avoid repeating subjects. */
+  history: (limit = 500) => all('SELECT * FROM stories ORDER BY created_at DESC LIMIT ?', limit).map(mapStory),
+  create(s: Omit<Story, 'id' | 'createdAt'>) {
+    const row: Story = { ...s, id: newId('sty'), createdAt: now() };
+    const { id: _i, campaignId, title, verification, status, appealScore, fingerprint, createdAt, ...data } = row;
+    run('INSERT INTO stories VALUES (?,?,?,?,?,?,?,?,?)', row.id, campaignId, title, JSON.stringify(data), verification, status, appealScore, fingerprint, createdAt);
+    return row;
+  },
+  update(sid: string, patch: Partial<Story>) {
+    const cur = stories.get(sid);
+    if (!cur) return;
+    const next = { ...cur, ...patch };
+    const { id: _i, campaignId: _c, title, verification, status, appealScore, fingerprint, createdAt: _t, ...data } = next;
+    run('UPDATE stories SET title = ?, data_json = ?, verification = ?, status = ?, appeal_score = ?, fingerprint = ? WHERE id = ?',
+      title, JSON.stringify(data), verification, status, appealScore, fingerprint, sid);
+  },
+  deleteForCampaign: (cid: string) => run('DELETE FROM stories WHERE campaign_id = ?', cid),
 };

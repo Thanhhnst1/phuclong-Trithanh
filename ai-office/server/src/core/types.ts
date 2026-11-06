@@ -3,7 +3,7 @@ export type Role = 'admin' | 'editor' | 'viewer';
 export type AgentId =
   | 'orchestrator'
   | 'researcher'
-  | 'collector'
+  | 'factchecker'
   | 'editor'
   | 'writer'
   | 'zalo'
@@ -67,17 +67,58 @@ export interface Workflow {
   builtin: boolean;
 }
 
+export interface HuntOptions {
+  /** How many topics to propose (5-10). */
+  count: number;
+  categories: string[];
+  region: 'vn' | 'world' | 'both';
+}
+
 export interface CampaignPlan {
   title: string;
-  product: string;
   goalSummary: string;
   platforms: Platform[];
-  audience: string;
-  tone: string;
-  keyMessages: string[];
-  headline: string;
-  searchKeywords: string[];
+  focus: string;
+  categories: string[];
+  region: HuntOptions['region'];
+  count: number;
+  searchQueries: string[];
+  avoid: string[];
   generatedBy: ResultKind;
+  revisionNotes?: string[];
+}
+
+export type Verification = 'confirmed' | 'partial' | 'insufficient' | 'demo';
+export type StoryStatus = 'candidate' | 'proposed' | 'held' | 'rejected' | 'selected' | 'published';
+
+export interface StorySource {
+  title: string;
+  url: string;
+  type?: 'press' | 'science' | 'official' | 'primary' | 'social' | 'other';
+}
+
+export interface Story {
+  id: string;
+  campaignId: string;
+  title: string;
+  summary: string;
+  when: string;
+  where: string;
+  category: string;
+  verification: Verification;
+  sources: StorySource[];
+  appealReasons: string;
+  angle: string;
+  appealScore: number;
+  confirmedFacts: string[];
+  unverifiedClaims: string[];
+  hypotheses: string[];
+  risks: string[];
+  mediaNotes: string;
+  checkNote: string;
+  status: StoryStatus;
+  fingerprint: string;
+  createdAt: string;
 }
 
 export interface Campaign {
@@ -143,6 +184,7 @@ export interface Asset {
 export interface ContentVariant {
   id: string;
   campaignId: string;
+  storyId: string | null;
   platform: Platform;
   variant: number;
   title: string;

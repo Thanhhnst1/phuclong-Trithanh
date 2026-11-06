@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { api, type Agent, type AgentId, type AgentState, type Campaign, type CampaignDetail, type SystemInfo, type User } from './api';
 
-export type Tab = 'campaigns' | 'approval' | 'assets' | 'reports' | 'integrations' | 'workflows' | 'logs' | 'users';
+export type Tab = 'campaigns' | 'topics' | 'approval' | 'assets' | 'reports' | 'integrations' | 'workflows' | 'logs' | 'users';
 
 export interface Handoff { id: number; from: AgentId; to: AgentId; label: string; at: number }
 

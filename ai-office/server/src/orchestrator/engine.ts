@@ -1,4 +1,4 @@
-import { campaigns, contents, tasks, workflows, now } from '../db/index.js';
+import { campaigns, contents, stories, tasks, workflows, now } from '../db/index.js';
 import { bus, type AgentLiveState } from '../core/bus.js';
 import { writeLog } from '../core/log.js';
 import { config } from '../config.js';
@@ -15,6 +15,7 @@ import {
   type Platform,
   type RunMode,
   type Task,
+  type HuntOptions,
 } from '../core/types.js';
 
 class TimeoutError extends Error {}
@@ -63,13 +64,13 @@ export class Engine {
 
   // ---------------------------------------------------------------- campaign lifecycle
 
-  createCampaign(input: { goal: string; workflowId: string; platforms: Platform[]; mode: RunMode; createdBy: string; scheduledAt?: string | null; publishAt?: string | null; autoStart?: boolean }): Campaign {
+  createCampaign(input: { goal: string; workflowId: string; platforms: Platform[]; mode: RunMode; createdBy: string; scheduledAt?: string | null; publishAt?: string | null; autoStart?: boolean; options?: HuntOptions }): Campaign {
     const wf = workflows.get(input.workflowId);
     if (!wf) throw new FatalError('Workflow không tồn tại');
     const scheduled = input.scheduledAt && new Date(input.scheduledAt).getTime() > Date.now();
     const c = campaigns.create({
       title: input.goal.slice(0, 80), goal: input.goal, workflowId: wf.id, platforms: input.platforms, mode: input.mode,
-      status: input.autoStart === false ? 'draft' : scheduled ? 'scheduled' : 'running', plan: null, createdBy: input.createdBy,
+      status: input.autoStart === false ? 'draft' : scheduled ? 'scheduled' : 'running', plan: { options: input.options ?? { count: 8, categories: [], region: 'both' } } as any, createdBy: input.createdBy,
       scheduledAt: input.scheduledAt ?? null, publishAt: input.publishAt ?? null,
     });
     const steps = resolveSteps(wf, input.platforms);
@@ -125,48 +126,75 @@ export class Engine {
     writeLog({ campaignId: cid, taskId: null, agent: 'orchestrator', level: 'warn', message: 'Đã hủy chiến dịch', data: null });
   }
 
-  /** Approve one content variant per platform; publishing can be delayed until campaign.publishAt. */
-  approve(cid: string, selections: Partial<Record<Platform, { contentId: string; mediaIds?: string[] }>>, userId: string) {
-    const c = mustCampaign(cid);
-    const gate = tasks.forCampaign(cid).find((t) => t.type === 'approval' && t.status === 'awaiting_approval');
-    if (!gate) throw new FatalError('Không có nội dung nào đang chờ duyệt');
-    const needed = new Set(tasks.forCampaign(cid).filter((t) => t.platform).map((t) => t.platform!));
-    for (const p of needed) if (!selections[p]) throw new FatalError(`Chưa chọn nội dung cho ${p}`);
-    for (const [p, sel] of Object.entries(selections)) {
-      const content = contents.get(sel!.contentId);
-      if (!content || content.campaignId !== cid || content.platform !== p) throw new FatalError(`Nội dung không hợp lệ cho ${p}`);
-    }
-    for (const v of contents.forCampaign(cid)) {
-      const sel = selections[v.platform];
-      if (sel?.contentId === v.id) contents.update(v.id, { status: 'approved', approvedBy: userId, approvedAt: now(), ...(sel.mediaIds ? { mediaIds: sel.mediaIds } : {}) });
-      else if (v.status === 'approved') contents.update(v.id, { status: 'draft', approvedBy: null, approvedAt: null });
-    }
-    tasks.update(gate.id, { status: 'succeeded', progress: 1, finishedAt: now(), resultKind: 'real', output: { approvedBy: userId, selections }, message: 'Đã duyệt' });
-    if (c.publishAt && new Date(c.publishAt).getTime() > Date.now()) {
-      for (const t of tasks.forCampaign(cid)) if (t.platform) tasks.update(t.id, { runAfter: c.publishAt });
-      writeLog({ campaignId: cid, taskId: gate.id, agent: 'orchestrator', level: 'info', message: `Đã lên lịch đăng lúc ${new Date(c.publishAt).toLocaleString('vi-VN')}`, data: null });
-    }
-    writeLog({ campaignId: cid, taskId: gate.id, agent: 'orchestrator', level: 'success', message: 'Nội dung đã được phê duyệt → chuyển sang xuất bản', data: selections });
+  private gate(cid: string, key?: 'select' | 'approve') {
+    const g = tasks.forCampaign(cid).find((t) => t.type === 'approval' && t.status === 'awaiting_approval');
+    if (!g || (key && g.stepKey !== key)) throw new FatalError(key === 'select' ? 'Không có danh sách chủ đề nào đang chờ chọn' : 'Không có nội dung nào đang chờ duyệt');
+    return g;
+  }
+
+  private passGate(cid: string, gate: Task, output: any, message: string) {
+    tasks.update(gate.id, { status: 'succeeded', progress: 1, finishedAt: now(), resultKind: 'real', output, message });
     this.emitTask(tasks.get(gate.id)!);
-    this.setAgent('orchestrator', { status: 'done', message: 'Đã nhận phê duyệt, giao việc xuất bản', campaignId: cid, taskId: gate.id, progress: 1 });
     contentsChanged(cid);
     this.setStatus(cid, 'running');
     void this.tick();
   }
 
-  /** Send content back to the Writer with feedback. */
+  /** Gate 1: the owner picks which verified topics to develop into posts. */
+  selectTopics(cid: string, storyIds: string[], userId: string) {
+    const c = mustCampaign(cid);
+    const gate = this.gate(cid, 'select');
+    if (!storyIds.length) throw new FatalError('Hãy chọn ít nhất 1 chủ đề');
+    for (const sid of storyIds) {
+      const st = stories.get(sid);
+      if (!st || st.campaignId !== cid) throw new FatalError('Chủ đề không hợp lệ');
+      if (st.status !== 'proposed') throw new FatalError(`"${st.title}" chưa đạt kiểm chứng — không thể phát triển thành bài`);
+      if (st.verification === 'demo' && c.mode !== 'demo') throw new FatalError('Chủ đề mẫu demo chỉ dùng trong Demo Mode');
+    }
+    for (const st of stories.forCampaign(cid)) if (storyIds.includes(st.id)) stories.update(st.id, { status: 'selected' });
+    writeLog({ campaignId: cid, taskId: gate.id, agent: 'orchestrator', level: 'success', message: `Chủ kênh chọn ${storyIds.length} chủ đề → giao Thiết kế ảnh & Biên tập viên`, data: { storyIds } });
+    this.setAgent('orchestrator', { status: 'done', message: `Đã chọn ${storyIds.length} chủ đề, giao việc viết bài`, campaignId: cid, taskId: gate.id, progress: 1 });
+    this.passGate(cid, gate, { selectedBy: userId, storyIds }, `Đã chọn ${storyIds.length} chủ đề`);
+  }
+
+  /** Gate 2: approve at most one variant per story and platform; delayed until campaign.publishAt if set. */
+  approve(cid: string, contentIds: string[], userId: string, media: Record<string, string[]> = {}) {
+    const c = mustCampaign(cid);
+    const gate = this.gate(cid, 'approve');
+    if (!contentIds.length) throw new FatalError('Hãy chọn ít nhất 1 bài để đăng');
+    const pairs = new Set<string>();
+    for (const id of contentIds) {
+      const v = contents.get(id);
+      if (!v || v.campaignId !== cid) throw new FatalError('Nội dung không hợp lệ');
+      const k = `${v.storyId}:${v.platform}`;
+      if (pairs.has(k)) throw new FatalError('Mỗi chủ đề chỉ chọn 1 phương án cho mỗi nền tảng');
+      pairs.add(k);
+    }
+    for (const v of contents.forCampaign(cid)) {
+      if (contentIds.includes(v.id)) contents.update(v.id, { status: 'approved', approvedBy: userId, approvedAt: now(), ...(media[v.id] ? { mediaIds: media[v.id] } : {}) });
+      else if (v.status === 'approved') contents.update(v.id, { status: 'draft', approvedBy: null, approvedAt: null });
+    }
+    if (c.publishAt && new Date(c.publishAt).getTime() > Date.now()) {
+      for (const t of tasks.forCampaign(cid)) if (t.platform) tasks.update(t.id, { runAfter: c.publishAt });
+      writeLog({ campaignId: cid, taskId: gate.id, agent: 'orchestrator', level: 'info', message: `Đã lên lịch đăng lúc ${new Date(c.publishAt).toLocaleString('vi-VN')}`, data: null });
+    }
+    writeLog({ campaignId: cid, taskId: gate.id, agent: 'orchestrator', level: 'success', message: `Đã duyệt ${contentIds.length} bài → chuyển sang xuất bản`, data: { contentIds } });
+    this.setAgent('orchestrator', { status: 'done', message: 'Đã nhận phê duyệt, giao việc xuất bản', campaignId: cid, taskId: gate.id, progress: 1 });
+    this.passGate(cid, gate, { approvedBy: userId, contentIds }, 'Đã duyệt');
+  }
+
+  /** Send back with feedback: at topic stage → hunt again; at post stage → rewrite. */
   reject(cid: string, feedback: string) {
     const c = mustCampaign(cid);
-    const all = tasks.forCampaign(cid);
-    const gate = all.find((t) => t.type === 'approval' && t.status === 'awaiting_approval');
-    if (!gate) throw new FatalError('Không có nội dung nào đang chờ duyệt');
+    const gate = this.gate(cid);
     const plan = { ...(c.plan as any), revisionNotes: [...((c.plan as any)?.revisionNotes ?? []), feedback] };
     campaigns.update(cid, { plan });
-    const write = all.find((t) => t.stepKey === 'write');
-    if (write) tasks.update(write.id, { status: 'pending', attempts: 0, progress: 0, error: null, output: null, message: 'Viết lại theo góp ý', runAfter: null });
+    const all = tasks.forCampaign(cid);
+    const redo = gate.stepKey === 'select' ? ['research', 'verify'] : ['write'];
+    for (const t of all) if (redo.includes(t.stepKey)) tasks.update(t.id, { status: 'pending', attempts: 0, progress: 0, error: null, output: null, message: 'Làm lại theo góp ý', runAfter: null });
     tasks.update(gate.id, { status: 'pending', message: null });
-    writeLog({ campaignId: cid, taskId: gate.id, agent: 'orchestrator', level: 'warn', message: `Yêu cầu viết lại: "${feedback}"`, data: null });
-    this.emitHandoff(cid, 'orchestrator', 'writer', 'Góp ý chỉnh sửa');
+    writeLog({ campaignId: cid, taskId: gate.id, agent: 'orchestrator', level: 'warn', message: `${gate.stepKey === 'select' ? 'Săn tin lại' : 'Viết lại'} theo góp ý: "${feedback}"`, data: null });
+    this.emitHandoff(cid, 'orchestrator', gate.stepKey === 'select' ? 'researcher' : 'writer', 'Góp ý');
     this.setStatus(cid, 'running');
     void this.tick();
   }
@@ -241,8 +269,10 @@ export class Engine {
         t.status = 'awaiting_approval';
         this.emitTask(t);
         this.setStatus(c.id, 'awaiting_approval');
-        this.setAgent('orchestrator', { status: 'waiting', message: 'Nội dung đã sẵn sàng — chờ anh duyệt!', campaignId: c.id, taskId: t.id, progress: 0.5 });
-        writeLog({ campaignId: c.id, taskId: t.id, agent: 'orchestrator', level: 'info', message: 'Đã trình nội dung, chờ phê duyệt', data: null });
+        const proposed = stories.forCampaign(c.id).filter((s) => s.status === 'proposed').length;
+        const msg = t.stepKey === 'select' ? `Có ${proposed} chủ đề đã kiểm chứng — chờ anh chọn!` : 'Bài đã sẵn sàng — chờ anh duyệt!';
+        this.setAgent('orchestrator', { status: 'waiting', message: msg, campaignId: c.id, taskId: t.id, progress: 0.5 });
+        writeLog({ campaignId: c.id, taskId: t.id, agent: 'orchestrator', level: 'info', message: msg, data: null });
         return; // campaign leaves "running"
       }
       if (this.running.size >= config.workerConcurrency || busyAgents.has(t.agent)) continue;
@@ -302,7 +332,7 @@ export class Engine {
       writeLog({ campaignId: c.id, taskId: t.id, agent: t.agent, level: res.resultKind === 'simulated' ? 'warn' : 'success', message: `${t.title}: ${res.summary}`, data: { resultKind: res.resultKind } });
       this.setAgent(t.agent, { status: 'done', message: res.summary, campaignId: c.id, taskId: t.id, progress: 1 });
       this.emitTask({ ...t, status: 'succeeded', progress: 1, message: res.summary });
-      if (t.agent === 'writer') contentsChanged(c.id);
+      if (['writer', 'researcher', 'factchecker'].includes(t.agent)) contentsChanged(c.id);
     } catch (err: any) {
       const reason = ctrl.signal.aborted ? ctrl.signal.reason : err;
       const msg = String(reason?.message ?? reason);

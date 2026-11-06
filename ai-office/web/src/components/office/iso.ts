@@ -14,13 +14,13 @@ export interface Zone {
   label: string;
 }
 
-/** Layout of the miniature office: work flows from top-left (research) to bottom-right (report). */
+/** Layout of the miniature newsroom: work flows from top-left (hunting) to bottom-right (report). */
 export const ZONES: Record<AgentId, Zone> = {
-  researcher: { x: 0, y: 0.4, size: 1.25, wall: 42, label: 'Phòng Nghiên cứu' },
-  collector: { x: 0, y: 4.1, size: 1.25, wall: 42, label: 'Kho Tư liệu' },
-  writer: { x: 2.6, y: 0.4, size: 1.25, wall: 42, label: 'Góc Viết bài' },
-  editor: { x: 2.6, y: 4.1, size: 1.25, wall: 42, label: 'Studio Thiết kế' },
-  orchestrator: { x: 5.1, y: 2.05, size: 1.7, wall: 78, label: 'Trung tâm Điều phối' },
+  researcher: { x: 0, y: 0.4, size: 1.25, wall: 42, label: 'Phòng Săn tin' },
+  factchecker: { x: 0, y: 4.1, size: 1.25, wall: 42, label: 'Bàn Kiểm chứng' },
+  writer: { x: 2.6, y: 0.4, size: 1.25, wall: 42, label: 'Bàn Biên tập' },
+  editor: { x: 2.6, y: 4.1, size: 1.25, wall: 42, label: 'Studio Ảnh' },
+  orchestrator: { x: 5.1, y: 2.05, size: 1.7, wall: 78, label: 'Phòng Tổng biên tập' },
   zalo: { x: 7.9, y: -0.75, size: 1.1, wall: 38, label: 'Zalo' },
   facebook: { x: 7.9, y: 1.2, size: 1.1, wall: 38, label: 'Facebook' },
   tiktok: { x: 7.9, y: 3.15, size: 1.1, wall: 38, label: 'TikTok' },
@@ -38,9 +38,10 @@ export const ISLAND = { x0: -1.3, y0: -2.0, x1: 12.4, y1: 7.2 };
 
 export const EDGES: { from: AgentId; to: AgentId; air?: boolean }[] = [
   { from: 'orchestrator', to: 'researcher', air: true },
-  { from: 'orchestrator', to: 'collector', air: true },
-  { from: 'researcher', to: 'writer' },
-  { from: 'collector', to: 'editor' },
+  { from: 'researcher', to: 'factchecker' },
+  { from: 'factchecker', to: 'orchestrator', air: true },
+  { from: 'orchestrator', to: 'writer', air: true },
+  { from: 'orchestrator', to: 'editor', air: true },
   { from: 'writer', to: 'orchestrator' },
   { from: 'editor', to: 'orchestrator' },
   { from: 'orchestrator', to: 'zalo' },

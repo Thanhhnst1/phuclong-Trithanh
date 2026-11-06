@@ -47,6 +47,7 @@ export function IntegrationsPanel() {
           <span>Khóa mã hóa: {system.vaultKeySource === 'env' ? '✅ APP_SECRET' : '⚠ file cục bộ data/.master-key'}</span>
         </div>
         {isAdmin && <ModelSetting current={system.llm.model} onSaved={loadAll} />}
+        {isAdmin && <BrandSetting current={system.brand} onSaved={loadAll} />}
       </div>
 
       {groups.map(([cat, title]) => (
@@ -70,6 +71,17 @@ function ModelSetting({ current, onSaved }: { current: string; onSaved: () => vo
     <div className="flex gap-2 pt-1">
       <input className="input !py-1.5" value={m} onChange={(e) => setM(e.target.value)} aria-label="Model Claude" />
       <button className="btn-ghost shrink-0" disabled={m === current} onClick={async () => { await api.put('/api/settings', { model: m }); onSaved(); notify('ok', 'Đã đổi model'); }}>Lưu model</button>
+    </div>
+  );
+}
+
+function BrandSetting({ current, onSaved }: { current: string; onSaved: () => void }) {
+  const [b, setB] = useState(current);
+  const { notify } = useStore();
+  return (
+    <div className="flex gap-2">
+      <input className="input !py-1.5" placeholder="Tên trang (in góc ảnh, vd: Chuyện Lạ Có Thật)" value={b} onChange={(e) => setB(e.target.value)} aria-label="Tên trang" />
+      <button className="btn-ghost shrink-0" disabled={b === current} onClick={async () => { await api.put('/api/settings', { brand: b }); onSaved(); notify('ok', 'Đã lưu tên trang'); }}>Lưu tên</button>
     </div>
   );
 }

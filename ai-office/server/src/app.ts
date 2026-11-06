@@ -7,15 +7,16 @@ import fstatic from '@fastify/static';
 import { z } from 'zod';
 import { config, paths } from './config.js';
 import {
-  assets, campaigns, contents, logs, publications, settings, tasks, users, workflows,
+  assets, campaigns, contents, logs, publications, settings, stories, tasks, users, workflows,
 } from './db/index.js';
+import { DEFAULT_AUTOHUNT, getAutoHunt, saveAutoHunt } from './orchestrator/autohunt.js';
 import {
   createSession, currentUser, destroySession, hashPassword, publicUser, requireRole, userOf, verifyPassword,
 } from './auth/index.js';
 import { bus } from './core/bus.js';
 import { FatalError, PLATFORMS, type Platform, type RunMode } from './core/types.js';
 import { engine } from './orchestrator/engine.js';
-import { detectPlatforms } from './orchestrator/planner.js';
+import { CATEGORIES, detectCategories, detectPlatforms } from './orchestrator/planner.js';
 import { validateWorkflow } from './orchestrator/workflows.js';
 import { AGENT_PROFILES } from './agents/types.js';
 import { ALLOWED_UPLOAD, absPath, hasFfmpeg, storeAsset } from './media/index.js';
@@ -102,6 +103,7 @@ export async function buildApp(): Promise<FastifyInstance> {
   // ------------------------------------------------------------ system / settings
   app.get('/api/system', { preHandler: viewer }, async () => ({
     mode: getMode(),
+    brand: settings.get('brand.name') ?? '',
     llm: { configured: !!anthropicKey(), active: !!resolveLLM(), model: currentModel() },
     ffmpeg: await hasFfmpeg(),
     publicBaseUrl: config.publicBaseUrl || null,
@@ -110,7 +112,8 @@ export async function buildApp(): Promise<FastifyInstance> {
   }));
 
   app.put('/api/settings', { preHandler: admin }, async (req) => {
-    const b = z.object({ mode: z.enum(['demo', 'production']).optional(), model: z.string().min(3).optional() }).parse(req.body);
+    const b = z.object({ mode: z.enum(['demo', 'production']).optional(), model: z.string().min(3).optional(), brand: z.string().max(40).optional() }).parse(req.body);
+    if (b.brand !== undefined) settings.set('brand.name', b.brand);
     if (b.mode) {
       if (b.mode === 'production' && vaultKeySource === 'file' && process.env.NODE_ENV === 'production') {
         throw new FatalError('Production yêu cầu đặt biến môi trường APP_SECRET để mã hóa thông tin xác thực');
@@ -160,20 +163,47 @@ export async function buildApp(): Promise<FastifyInstance> {
 
   app.post('/api/campaigns/preview', { preHandler: viewer }, async (req) => {
     const b = z.object({ goal: z.string().min(3) }).parse(req.body);
-    return { platforms: detectPlatforms(b.goal) };
+    return { platforms: detectPlatforms(b.goal), categories: detectCategories(b.goal) };
+  });
+
+  app.get('/api/categories', { preHandler: viewer }, async () => CATEGORIES);
+
+  app.get('/api/stories', { preHandler: viewer }, async (req) => {
+    const q = req.query as { status?: string; limit?: string };
+    const titles = new Map(campaigns.list().map((c) => [c.id, c.title]));
+    return stories.history(Number(q.limit ?? 300)).filter((s) => !q.status || s.status === q.status).map((s) => ({ ...s, campaignTitle: titles.get(s.campaignId) ?? '' }));
+  });
+
+  const HuntSchema = z.object({
+    count: z.number().int().min(5).max(10).default(8),
+    categories: z.array(z.string().max(60)).max(12).default([]),
+    region: z.enum(['vn', 'world', 'both']).default('both'),
+  });
+
+  app.get('/api/autohunt', { preHandler: viewer }, async () => getAutoHunt() ?? { ...DEFAULT_AUTOHUNT, userId: null });
+  app.put('/api/autohunt', { preHandler: editor }, async (req) => {
+    const b = z.object({
+      enabled: z.boolean(), time: z.string().regex(/^\d{2}:\d{2}$/), goal: z.string().min(5).max(2000),
+      platforms: z.array(z.enum(PLATFORMS as [Platform, ...Platform[]])).min(1), workflowId: z.string(), options: HuntSchema,
+    }).parse(req.body);
+    if (!workflows.get(b.workflowId)) throw new FatalError('Workflow không tồn tại');
+    const prev = getAutoHunt();
+    saveAutoHunt({ ...b, userId: userOf(req).id, lastRun: prev?.lastRun ?? null });
+    return getAutoHunt();
   });
 
   app.post('/api/campaigns', { preHandler: editor }, async (req) => {
     const b = z.object({
       goal: z.string().min(5, 'Mục tiêu quá ngắn').max(2000),
-      workflowId: z.string().default('wf_full'),
+      workflowId: z.string().default('wf_newsroom'),
+      options: HuntSchema.optional(),
       platforms: z.array(z.enum(PLATFORMS as [Platform, ...Platform[]])).optional(),
       scheduledAt: z.string().datetime().nullable().optional(),
       publishAt: z.string().datetime().nullable().optional(),
       autoStart: z.boolean().optional(),
     }).parse(req.body);
     let platforms = b.platforms?.length ? b.platforms : detectPlatforms(b.goal);
-    if (!platforms.length) platforms = [...PLATFORMS];
+    if (!platforms.length) platforms = ['facebook'];
     return engine.createCampaign({ ...b, platforms, mode: getMode(), createdBy: userOf(req).id });
   });
 
@@ -185,6 +215,7 @@ export async function buildApp(): Promise<FastifyInstance> {
       campaign: c,
       tasks: tasks.forCampaign(id),
       contents: contents.forCampaign(id),
+      stories: stories.forCampaign(id),
       assets: assets.list({ campaignId: id }),
       publications: publications.forCampaign(id),
     };
@@ -197,9 +228,14 @@ export async function buildApp(): Promise<FastifyInstance> {
       case 'pause': engine.pause(id); break;
       case 'resume': engine.resume(id); break;
       case 'cancel': engine.cancel(id); break;
+      case 'select': {
+        const b = z.object({ storyIds: z.array(z.string()).min(1, 'Hãy chọn ít nhất 1 chủ đề') }).parse(req.body);
+        engine.selectTopics(id, b.storyIds, userOf(req).id);
+        break;
+      }
       case 'approve': {
-        const b = z.object({ selections: z.record(z.string(), z.object({ contentId: z.string(), mediaIds: z.array(z.string()).optional() })) }).parse(req.body);
-        engine.approve(id, b.selections as any, userOf(req).id);
+        const b = z.object({ contentIds: z.array(z.string()).min(1, 'Hãy chọn ít nhất 1 bài'), media: z.record(z.string(), z.array(z.string())).optional() }).parse(req.body);
+        engine.approve(id, b.contentIds, userOf(req).id, b.media ?? {});
         break;
       }
       case 'reject': {
@@ -270,6 +306,7 @@ export async function buildApp(): Promise<FastifyInstance> {
     let license = '';
     let source = 'Người dùng tải lên';
     let rightsConfirmed = false;
+    let storyId: string | null = null;
     for await (const part of req.parts()) {
       if (part.type === 'field') {
         const v = String(part.value);
@@ -278,6 +315,7 @@ export async function buildApp(): Promise<FastifyInstance> {
         if (part.fieldname === 'license') license = v.slice(0, 200);
         if (part.fieldname === 'source' && v) source = v.slice(0, 200);
         if (part.fieldname === 'rightsConfirmed') rightsConfirmed = v === 'true';
+        if (part.fieldname === 'storyId' && v) storyId = v;
         continue;
       }
       const ext = path.extname(part.filename).toLowerCase();
@@ -287,7 +325,7 @@ export async function buildApp(): Promise<FastifyInstance> {
       const buffer = await part.toBuffer();
       created.push(await storeAsset({
         buffer, filename: part.filename, campaignId, role, source: `${source} (${u.email})`,
-        license: license || 'Người dùng xác nhận có quyền sử dụng',
+        license: license || 'Người dùng xác nhận có quyền sử dụng', meta: storyId ? { storyId } : {},
       }));
     }
     if (!created.length) throw new FatalError('Chưa chọn tệp');

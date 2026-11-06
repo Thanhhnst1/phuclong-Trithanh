@@ -217,3 +217,52 @@ export async function makeSlideshow(images: string[], outAbs: string, opts: { se
     p.on('close', (code) => (code === 0 ? resolve() : reject(new Error(`ffmpeg lỗi (${code}): ${err.slice(-400)}`))));
   });
 }
+
+// ---------------- news title cards ----------------
+
+export interface CardOptions {
+  format: FormatKey;
+  title: string;
+  category: string;
+  /** Real photo supplied by the user (with its source) — shown with a credit line. */
+  photo?: Buffer | null;
+  credit?: string | null;
+  brand?: string | null;
+}
+
+/**
+ * Facebook-style news card. Without a real photo it is a pure typographic card and
+ * carries "Ảnh minh họa" so readers never mistake it for a photo of the event.
+ */
+export async function renderCard(o: CardOptions): Promise<Buffer> {
+  const { w, h } = FORMATS[o.format];
+  const pad = Math.round(w * 0.07);
+  const size = Math.round(w * (o.format === 'landscape' ? 0.05 : 0.07));
+  const lines = wrap(o.title, Math.floor((w - pad * 2) / (size * 0.62)), o.format === 'landscape' ? 3 : 5);
+  const small = Math.round(size * 0.42);
+  const textH = lines.length * size * 1.18;
+  const textTop = o.photo ? h - pad - textH - small * 2.2 : (h - textH) / 2;
+  const label = o.photo ? (o.credit ? `Ảnh: ${o.credit}` : '') : 'Ảnh minh họa — không phải ảnh thật của sự kiện';
+
+  let base: ReturnType<typeof sharp>;
+  if (o.photo) {
+    const photo = await sharp(o.photo).resize(w, h, { fit: 'cover' }).toBuffer();
+    const shade = Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}"><defs><linearGradient id="s" x1="0" y1="0" x2="0" y2="1"><stop offset="0.35" stop-color="#000" stop-opacity="0"/><stop offset="1" stop-color="#000" stop-opacity="0.85"/></linearGradient></defs><rect width="100%" height="100%" fill="url(#s)"/></svg>`);
+    base = sharp(await sharp(photo).composite([{ input: shade }]).png().toBuffer());
+  } else {
+    base = sharp(Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}">
+      <defs><radialGradient id="g" cx="0.3" cy="0.2" r="1.1"><stop offset="0" stop-color="#3b2a6b"/><stop offset="0.6" stop-color="#1a1636"/><stop offset="1" stop-color="#0d0b1e"/></radialGradient></defs>
+      <rect width="100%" height="100%" fill="url(#g)"/>
+      ${Array.from({ length: 40 }, (_, i) => `<circle cx="${(i * 137) % w}" cy="${(i * 251) % h}" r="${(i % 3) + 1}" fill="#fff" opacity="${0.15 + (i % 5) * 0.08}"/>`).join('')}
+      <circle cx="${w * 0.82}" cy="${h * 0.16}" r="${w * 0.16}" fill="#8b7cf6" opacity="0.18"/>
+    </svg>`));
+  }
+  const fg = Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}">
+    <rect x="${pad}" y="${pad}" rx="${small}" width="${o.category.length * small * 0.78 + small * 2}" height="${small * 2}" fill="#f2c94c"/>
+    <text x="${pad + small}" y="${pad + small * 1.38}" font-family="DejaVu Sans" font-weight="bold" font-size="${small}" fill="#1a1636">${esc(o.category.toUpperCase())}</text>
+    ${lines.map((l, i) => `<text x="${pad}" y="${textTop + size + i * size * 1.18}" font-family="DejaVu Sans" font-weight="bold" font-size="${size}" fill="#ffffff">${esc(l)}</text>`).join('')}
+    ${label ? `<text x="${pad}" y="${h - pad * 0.55}" font-family="DejaVu Sans" font-size="${Math.round(small * 0.8)}" fill="#ffffff" opacity="0.75">${esc(label)}</text>` : ''}
+    ${o.brand ? `<text x="${w - pad}" y="${pad + small * 1.38}" text-anchor="end" font-family="DejaVu Sans" font-weight="bold" font-size="${small}" fill="#ffffff" opacity="0.9">${esc(o.brand)}</text>` : ''}
+  </svg>`);
+  return base.composite([{ input: fg }]).jpeg({ quality: 88 }).toBuffer();
+}
